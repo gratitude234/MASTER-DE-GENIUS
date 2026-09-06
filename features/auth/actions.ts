@@ -63,13 +63,14 @@ export async function signupAction(_previous: AuthActionState, formData: FormDat
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
   const supabase = await createClient();
-  const origin = await appOrigin();
+  // Email confirmation is disabled in Supabase, so signUp returns a usable
+  // session immediately. No emailRedirectTo is sent: signup never routes through
+  // /auth/callback, which now exists only for password recovery.
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: { full_name: fullName },
-      emailRedirectTo: `${origin}/auth/callback?next=/onboarding`,
     },
   });
 
@@ -77,8 +78,20 @@ export async function signupAction(_previous: AuthActionState, formData: FormDat
     return { error: error.message.includes("already") ? "An account with this email may already exist." : "We couldn't create your account. Please try again." };
   }
 
-  if (data.session) redirect("/onboarding");
-  redirect(`/check-email?email=${encodeURIComponent(email)}`);
+  if (!data.user) {
+    return { error: "We couldn't create your account. Please try again." };
+  }
+
+  if (!data.session) {
+    // Only reachable if confirmation is switched back on in Supabase. Say what
+    // actually happened rather than claiming a verification email was sent.
+    return { error: "Your account was created, but we couldn't start your session. Please sign in." };
+  }
+
+  // The profile row is created by the on_auth_user_created trigger, and
+  // onboarding tolerates it not being readable yet, so signup does not race it
+  // with a second insert.
+  redirect("/onboarding");
 }
 
 export async function requestPasswordResetAction(_previous: AuthActionState, formData: FormData): Promise<AuthActionState> {

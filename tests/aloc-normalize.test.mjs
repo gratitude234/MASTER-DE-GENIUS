@@ -180,3 +180,30 @@ test('SECURITY: the student payload drops the answer key and explanation', () =>
   assert.equal(serialized.includes('Velocity is a vector quantity.'), false);
   assert.equal(student.options.length, 4, 'options themselves must still be delivered');
 });
+
+test('REGRESSION: instruction text is not rendered as a passage when hasPassage is 0', () => {
+  // Observed live: most English questions carry a long instruction in `section`
+  // with hasPassage=0. Treating it as a passage put fabricated content on screen.
+  const instruction = '<b>In each of questions 86 to 100, choose the option opposite in meaning to the underlined word(s).</b>';
+  assert.ok(instruction.length > 40, 'long enough to defeat the length heuristic alone');
+
+  assert.equal(normalizePassage(instruction, 0), null);
+  assert.equal(normalizePassage(instruction, '0'), null);
+  assert.equal(ok({ section: instruction, hasPassage: 0 }).passage, null);
+});
+
+test('a genuine comprehension passage is kept when hasPassage is set', () => {
+  const body = 'The rain had not stopped for three days, and the road to the market had become a river of mud.';
+  assert.ok(normalizePassage(body, 1));
+  assert.equal(normalizePassage(body, '1').body, body);
+
+  const question = ok({ section: body, hasPassage: 1 });
+  assert.equal(question.passage.body, body);
+  assert.equal(question.passage.id, ok({ id: 9, section: body, hasPassage: 1 }).passage.id, 'shared passage id');
+});
+
+test('a payload without the flag still falls back to the length heuristic', () => {
+  const body = 'The rain had not stopped for three days, and the road had become a river of mud.';
+  assert.ok(normalizePassage(body, undefined), 'unknown flag keeps the previous behaviour');
+  assert.equal(normalizePassage('Choose the best option.', undefined), null);
+});

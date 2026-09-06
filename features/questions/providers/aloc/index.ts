@@ -32,10 +32,12 @@ export class AlocQuestionProvider implements QuestionProvider {
   /**
    * Deliberately conservative. `topics` and `difficulty` are false because the
    * legacy API cannot filter on them, and claiming otherwise would show a
-   * student unrelated questions under a filter label. `assets` and
-   * `explanations` are false because neither could be confirmed against a live
-   * response during M7; the normalizer still passes both through when a payload
-   * happens to contain them, so the product under-promises rather than over-promises.
+   * student unrelated questions under a filter label.
+   *
+   * `explanations` is true: live UTME responses carry a populated `solution`
+   * field. `assets` stays false because every observed `image` field was empty,
+   * so the capability is not claimed; the normalizer still passes an image
+   * through if one appears.
    */
   readonly capabilities: ProviderCapabilities = {
     years: true,
@@ -43,7 +45,7 @@ export class AlocQuestionProvider implements QuestionProvider {
     difficulty: false,
     passages: true,
     assets: false,
-    explanations: false,
+    explanations: true,
   };
 
   constructor(private readonly fetchImpl?: typeof fetch) {}

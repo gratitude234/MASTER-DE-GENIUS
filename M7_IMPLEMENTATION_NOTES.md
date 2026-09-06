@@ -4,10 +4,11 @@ This release adds a second question provider behind the existing
 `QuestionProvider` abstraction. The Practice Engine, Exam Engine, Results,
 mistake bank, offline queue, PWA and Supabase schema are unchanged.
 
-> **The live integration is not yet proven.** The ALOC access token available
-> during implementation was rejected by the API, so no real question has passed
-> through this adapter. Everything below is implemented, type-checked, linted,
-> built and unit-tested against fixtures. See **Live verification status**.
+> **Verified against the live API.** Real UTME questions now flow through the
+> adapter for all 14 mapped subjects, including a full 60-question English paper.
+> Two findings from that verification are recorded below: the Agricultural Science
+> quarantine is confirmed correct, and the passage rule was corrected. Practice and
+> Mock flows have still not been exercised end to end in a browser.
 
 ## Files created
 
@@ -86,6 +87,11 @@ Fourteen JAMB subjects are mapped inside the adapter:
 The remaining catalogue subjects (French, Hausa, Igbo, Yoruba, Arabic, Music,
 Fine Art, Home Economics) raise an unsupported-subject error.
 
+**These identifiers are provisional.** They follow the published legacy subject
+list but have not been confirmed against a live response. Run
+`npm run aloc:smoke -- --verify-subjects` once a valid token exists; it probes
+every mapping and reports which the API accepts.
+
 ### Quarantined mappings
 
 **Agricultural Science is quarantined and is not served by ALOC.** Its suspected
@@ -102,11 +108,6 @@ transport, without any chance of it reaching a student session first.
 To promote one: confirm it with the smoke script, move the row into `SUBJECTS`,
 and update `tests/aloc-subject-availability.test.mjs` — the regression test
 asserts the quarantine, so lifting it has to be deliberate.
-
-**These identifiers are provisional.** They follow the published legacy subject
-list but have not been confirmed against a live response. Run
-`npm run aloc:smoke -- --verify-subjects` once a valid token exists; it probes
-every mapping and reports which the API accepts.
 
 ## Normalization
 
@@ -142,13 +143,15 @@ replaced with the student's target exam year.
 ## Capabilities
 
 ```ts
-{ years: true, topics: false, difficulty: false, passages: true, assets: false, explanations: false }
+{ years: true, topics: false, difficulty: false, passages: true, assets: false, explanations: true }
 ```
 
 `topics` and `difficulty` are false because the legacy API cannot filter on them.
-`assets` and `explanations` are false because neither could be confirmed against
-a live response; the normalizer still passes both through when a payload
-contains them, so the product under-promises rather than over-promises.
+
+`explanations` is **true**, confirmed live: UTME records carry a populated
+`solution` field (5/5 Physics, 35/60 English in sampled runs). `assets` stays
+false because every observed `image` field was empty, so the capability is not
+claimed; the normalizer still passes an image through if one appears.
 
 A filter the provider cannot honour is refused in `fetchCanonicalQuestions`
 **before** a session is created, and again inside the provider as defence in
@@ -199,47 +202,85 @@ logged; a test asserts the token appears in no log line or error message.
 
 ## Live verification status
 
+The access token was rejected during initial implementation but is now active.
+Everything below was run against the real API.
+
 | Check | Result |
 | --- | --- |
-| Endpoint reachable | **Yes** — `questions.aloc.com.ng` responds |
-| Header name confirmed | **Yes** — `AccessToken` is read; `Authorization: Bearer` is not |
-| Token accepted | **No** — `HTTP 406 {"status":406,"error":"Access token not valid or deactivated"}` |
-| Live smoke test | **Failed on credentials**, not on code |
-| Response schema confirmed | **No** — no authenticated response was ever obtained |
-| Practice flow (Flow A/B) | **Not run** — needs a working token |
-| Mock flow (Flow C) | **Not run** — needs a working token |
+| Endpoint reachable | Confirmed |
+| Header name | Confirmed — `AccessToken`; `Authorization: Bearer` is not read |
+| Token accepted | Confirmed |
+| Response schema | **Confirmed** — see below |
+| All 14 mapped subjects | **Confirmed** — 14/14 return usable questions |
+| 60-question English assembly | **Confirmed** — 3 calls, 62 received, 60 unique |
+| Agricultural Science quarantine | **Confirmed correct** — see below |
+| Practice flow in a browser (A/B) | Not run |
+| Mock flow in a browser (C) | Not run |
 
-The configured token returns byte-identical output to a deliberately invalid
-token, and an unauthenticated request returns a different error
-("Access token not provide on request header"), which proves the header is being
-read correctly. This is a credential problem.
+### Confirmed response schema
 
-`npm run aloc:smoke` currently reports:
-
-```
-[questions] provider=aloc path=/q/3 exam=utme subject=physics attempt=1/3 status=406 ms=1232 failed
-ALOC connectivity: FAILED
-QuestionProviderAuthError: ALOC rejected the access token (status 406): Access token not valid or deactivated
+```json
+{ "subject": "chemistry", "status": 200,
+  "data": { "id": 485, "question": "...", "option": { "a": "...", "e": null },
+            "section": "", "image": "", "answer": "b", "solution": "...",
+            "examtype": "utme", "examyear": "2018" } }
 ```
 
-That output is itself a partial verification: the adapter reached the real API,
-classified the failure correctly, did not retry an auth error, and logged
-nothing sensitive.
+`/q` returns an object, `/q/{n}` an array. English records carry three extra
+fields: `questionNub`, `hasPassage` and `category`. Every field name assumed
+during implementation was correct.
 
-**Because no authenticated response was seen, the field names in the normalizer
-(`id`, `question`, `option`, `answer`, `section`, `image`, `solution`,
-`examyear`) follow published documentation, not observed data.** The normalizer
-accepts several shapes per field and discards anything it cannot resolve, so a
-schema difference degrades into visible discards rather than corrupt questions.
-The first run of `npm run aloc:smoke` with a valid token will confirm or correct
-this in seconds — a high `unresolved_answer` or `invalid_structure` count in the
-log is the signal that a field name differs.
+### Finding 1 — the Agricultural Science quarantine is correct
+
+Probing the candidate identifier confirms it does not exist:
+
+```
+GET /q?subject=agriculture&type=utme
+HTTP 200  PDOException: SQLSTATE[42S02]: Base table or view not found:
+          Table 'alocng_storage02.agriculture' doesn't exist
+```
+
+`agriculturalscience` fails identically, and both match a deliberately bogus
+control subject. ALOC maps each subject to a MySQL table and leaks a raw
+Laravel stack trace for an unknown one — returned with **HTTP 200**. The
+transport already treated a 200 without `data` as a failure, so this never
+produced questions; its message now names the likely cause and still never
+echoes the upstream body, which contains server paths.
+
+Agricultural Science therefore stays quarantined. No identifier for it is known.
+
+### Finding 2 — `section` is not a passage field (fixed)
+
+Live English records put **instruction text** in `section`
+("In each of questions 86 to 100, choose the option opposite in meaning to the
+underlined word(s)."), and mark real comprehension questions with
+`hasPassage: 1`. In a 34-record sample, 32 had a `section` longer than the
+40-character threshold the normalizer originally used, and **all 32 had
+`hasPassage: 0`** — so every one would have been rendered to students as a
+comprehension passage it is not.
+
+`normalizePassage` now treats `hasPassage` as authoritative when present and
+falls back to the length heuristic only when the field is absent. A live
+10-question English run reports `With passage: 0`, down from ~9 fabricated ones.
+
+### Sampled live runs
+
+```
+physics, 5   -> 1 request,  5 received,  5 unique, 0 discarded, 5 explanations
+english, 10  -> 1 request, 10 received, 10 unique, 0 discarded, 0 passages
+english, 60  -> 3 requests (40/27/6), 62 received, 60 unique,
+                discarded: empty_prompt=1, unresolved_answer=1
+```
+
+The 60-question run is the mock's hardest requirement and it succeeds. It also
+demonstrates the defensive path working on real data: two malformed upstream
+records were dropped without failing the batch, and the shortfall was refilled.
 
 ## Verification performed
 
 | Gate | Result |
 | --- | --- |
-| `npm test` | **81 passed**, 0 failed (was 25 at M6) |
+| `npm test` | **84 passed**, 0 failed (was 25 at M6) |
 | `npm run lint` | Passed, zero warnings |
 | `npm run typecheck` | Passed |
 | `npm run build` | Passed, all routes compiled |
@@ -272,9 +313,10 @@ Add to Project Settings → Environment Variables:
 
 ## Known limitations
 
-- **No live verification.** The token is rejected; nothing has been proven end to
-  end against real data.
-- **Subject identifiers are provisional** until `--verify-subjects` runs.
+- **Browser flows are unverified.** Practice, Timed Practice and the full Mock
+  have not been driven end to end through the UI against a live Supabase project.
+- **Agricultural Science has no known identifier.** It is not a mapping error to
+  fix by guessing; the subject appears absent from the legacy dataset.
 - **Agricultural Science is unavailable** through ALOC pending verification of its
   upstream identifier. A student who selected it can still practise their other
   subjects, but the full mock is blocked while it is one of their four.
@@ -282,9 +324,10 @@ Add to Project Settings → Environment Variables:
   hides both rather than ignoring them.
 - **Explanations are unconfirmed.** Practice mode shows correctness with no
   explanation when the source supplies none. No explanation is ever fabricated.
-- **Inventory is unknown.** Whether ALOC can supply 60 unique English plus 40 per
-  subject in one session is untested. If it cannot, mock creation reports a
-  shortage rather than weakening the blueprint.
+- **Per-subject inventory beyond English is unmeasured.** English supplies 60
+  unique questions in 3 calls; the other subjects were only sampled at 1. If any
+  cannot fill 40, mock creation reports a shortage rather than weakening the
+  blueprint.
 - **Legacy API is scheduled for shutdown** (announced on the ALOC site, roughly
   a year out). The adapter is split into transport / normalize / mapping so the
   transport can be replaced by ALOC Station without touching the engines.

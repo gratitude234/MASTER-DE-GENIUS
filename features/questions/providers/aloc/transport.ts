@@ -175,7 +175,14 @@ export async function alocRequest(options: AlocFetchOptions): Promise<AlocEnvelo
       }
 
       logCall({ path, subject, examType, attempt, status, durationMs, outcome: "failed" });
-      throw new QuestionProviderError(`ALOC request failed with status ${status}: ${message || "no detail"}`);
+      // A 200 with no `data` means the upstream rejected the query itself: the
+      // legacy API answers an unknown subject with a raw server error page.
+      // Its body is never echoed, since it can contain server paths.
+      throw new QuestionProviderError(
+        response.ok && !body
+          ? `ALOC returned a non-JSON body for subject "${subject}" (status ${status}); the subject identifier is probably not valid upstream.`
+          : `ALOC request failed with status ${status}: ${message || "no detail"}`,
+      );
     } catch (error) {
       clearTimeout(timer);
 

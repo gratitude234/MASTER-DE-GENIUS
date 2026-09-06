@@ -17,6 +17,7 @@ export interface AlocRawQuestion {
   solution?: unknown;
   examtype?: unknown;
   examyear?: unknown;
+  hasPassage?: unknown;
 }
 
 export interface NormalizeContext {
@@ -172,7 +173,17 @@ function stableHash(value: string): string {
   return hash.toString(36);
 }
 
-export function normalizePassage(raw: unknown): QuestionPassage | null {
+/**
+ * `section` is not a passage field. Live responses put instruction text in it for
+ * most English questions ("In each of questions 86 to 100, choose the option
+ * opposite in meaning to the underlined word(s)."), and only comprehension
+ * questions carry `hasPassage: 1`. Trusting length alone rendered instruction
+ * lines as passages, which is fabricated content; the flag is authoritative when
+ * present, and the length heuristic only applies when the field is absent.
+ */
+export function normalizePassage(raw: unknown, hasPassage?: unknown): QuestionPassage | null {
+  if (hasPassage !== undefined && !Number(hasPassage)) return null;
+
   let title: string | null = null;
   let body = "";
 
@@ -184,8 +195,8 @@ export function normalizePassage(raw: unknown): QuestionPassage | null {
     title = cleanText(record.theme ?? record.title ?? record.name) || null;
   }
 
-  // A bare instruction line is not a comprehension passage; inventing one would
-  // put fabricated content on screen.
+  // Fallback for a payload without the flag: a bare instruction line is not a
+  // comprehension passage, and inventing one would put fabricated content on screen.
   if (!body || body.length < 40) return null;
   return { id: `aloc:passage:${stableHash(body)}`, title, body };
 }
@@ -238,7 +249,7 @@ export function normalizeAlocQuestion(raw: unknown, context: NormalizeContext): 
       topic: null,
       year: normalizeYear(record.examyear),
       prompt,
-      passage: normalizePassage(record.section),
+      passage: normalizePassage(record.section, record.hasPassage),
       assets: normalizeAssets(record.image, providerQuestionId),
       options,
       correctOptionKey,
