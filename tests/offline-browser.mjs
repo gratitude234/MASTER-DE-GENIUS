@@ -55,6 +55,10 @@ try {
  await expect(second.getByRole('button',{name:'A Option A',exact:true})).toBeDisabled();await second.close();
  // Actual browser page close/reopen preserves choices.
  await page.close();page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/offline');await page.getByRole('button',{name:'Resume saved session'}).click();
+ // The lock request is queued, not ifAvailable, so this tab only becomes the
+ // writer once Chromium destroys the closed documents. That is not instant, so
+ // wait for the writer handover before reading the restored selection.
+ await expect(page.getByRole('button',{name:'A Option A',exact:true})).toBeEnabled({timeout:20000});
  await expect(page.getByRole('button',{name:'A Option A',exact:true})).toHaveAttribute('aria-pressed','true');
  const saved={};let writes=0;let submissions=0;
  await context.route('**/api/exam/attempts/*/response',async route=>{
@@ -185,6 +189,8 @@ try {
 
  // Conflict: the sheet opens on a server conflict, "Decide later" resolves
  // nothing, it can be reopened, and only the existing action retries the write.
+ // A conflict can only come back from the server, so this block must run online.
+ await context.setOffline(false);
  let conflictWrites=0;
  await context.unroute('**/api/exam/attempts/*/response');
  await context.route('**/api/exam/attempts/*/response',async route=>{
@@ -192,6 +198,13 @@ try {
   const body=route.request().postDataJSON();
   if(conflictWrites===1)return route.fulfill({status:409,json:{error:'Another device saved a newer answer.',code:'CONFLICT',serverNow:Date.now()}});
   return route.fulfill({json:{...body,revision:body.expectedRevision+1,serverNow:Date.now()}});
+ });
+ // resolveConflict re-reads the authoritative view before retrying the write,
+ // so the fixture must serve one whose revisions are ahead of this device.
+ await context.route('**/api/offline/session/**',route=>{
+  const latest=makeRecord().view;
+  for(const q of latest.subjects[0].questions) q.revision=5;
+  return route.fulfill({json:{view:latest}});
  });
  await page.goto(base+'/offline');await seed(makeRecord());await page.reload();
  await page.getByRole('button',{name:'Resume saved session'}).click();
@@ -206,6 +219,7 @@ try {
  await page.getByRole('button',{name:/Keep this device/}).click();
  await expect.poll(()=>conflictWrites).toBeGreaterThan(writesAtConflict);
  console.log('PASS: conflict sheet opens, defers without resolving, reopens and runs the existing handler');
+ await context.unroute('**/api/offline/session/**');
  await context.unroute('**/api/exam/attempts/*/response');
  await context.route('**/api/exam/attempts/*/response',r=>r.fulfill({status:503,json:{error:'Fixture connection unavailable'}}));
  await context.setOffline(false);
