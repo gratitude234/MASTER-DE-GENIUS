@@ -110,9 +110,15 @@ export function Sheet({
           tabIndex={-1}
           className={sheetPanelClasses({ size, className })}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 pb-4 pt-5">
+          {/*
+            The grab handle is mobile-only chrome: it says "this panel drags up
+            from the bottom edge" on the one form factor where that is true.
+          */}
+          <div aria-hidden="true" className="mx-auto mt-3 h-1 w-9 shrink-0 rounded-full bg-slate-200 sm:hidden" />
+
+          <div className="flex items-start justify-between gap-4 px-5 pb-4 pt-4 sm:pt-6">
             <div className="min-w-0">
-              <h2 id={titleId} className={hideTitle ? "sr-only" : typography.h2}>
+              <h2 id={titleId} className={hideTitle ? "sr-only" : typography.h3}>
                 {title}
               </h2>
               {description ? (
@@ -135,7 +141,7 @@ export function Sheet({
             ) : null}
           </div>
 
-          <div className={cn("flex-1 overflow-y-auto px-5 py-5", bodyClassName)}>{children}</div>
+          <div className={cn("flex-1 overflow-y-auto px-5 pb-5", bodyClassName)}>{children}</div>
 
           {footer ? (
             <div className="border-t border-slate-100 px-5 py-4">{footer}</div>

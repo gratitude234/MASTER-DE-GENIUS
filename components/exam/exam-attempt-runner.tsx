@@ -174,12 +174,12 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
 
   if (submitted) {
     return (
-      <div className="min-h-dvh bg-slate-50 px-4 py-10 sm:px-6">
-        <div className="mx-auto max-w-xl rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
-          <div aria-hidden="true" className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-success-50 text-success-700"><Check className="h-6 w-6" /></div>
-          <div className={cn("mt-5", typography.eyebrow, "text-success-700")}>Exam submitted</div>
-          <h1 className={cn("mt-2", typography.h1)}>Your answers are locked in.</h1>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
+      <div className="grid min-h-dvh place-items-center bg-slate-50 px-6 py-10">
+        <div className="screen-enter w-full max-w-[440px] rounded-3xl border border-slate-200 bg-white px-8 py-10 text-center">
+          <div aria-hidden="true" className="mx-auto grid h-[52px] w-[52px] place-items-center rounded-2xl bg-success-50 text-success-600"><Check className="h-[22px] w-[22px]" /></div>
+          <div className={cn("mt-4", typography.eyebrow, "text-success-600")}>Exam submitted</div>
+          <h1 className={cn("mt-2.5", typography.h1)}>Your answers are locked in.</h1>
+          <p className="mx-auto mt-2 max-w-md text-[13px] leading-[1.6] text-slate-600">
             {submitted.answeredCount} of {submitted.totalQuestions} questions were answered. {submitted.submissionReason === "time_expired" ? "The server submitted the paper when time expired." : "You submitted the paper manually."}
           </p>
           {sync.pendingCount > 0 && (
@@ -189,23 +189,23 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
               </InlineAlert>
             </div>
           )}
-          <dl className="mt-6 grid grid-cols-3 gap-2">
+          <dl className="mt-5 grid grid-cols-3 gap-2">
             {[
               ["Answered", submitted.answeredCount],
               ["Unanswered", submitted.totalQuestions - submitted.answeredCount],
               ["Flagged", submitted.flaggedCount],
             ].map(([label, value]) => (
               <div key={label} className="flex flex-col-reverse rounded-xl bg-slate-50 p-3">
-                <dt className="text-[11px] font-semibold text-slate-500">{label}</dt>
-                <dd className="mono-number text-lg font-black leading-none text-slate-950">{value}</dd>
+                <dt className="text-[10px] font-medium text-slate-500">{label}</dt>
+                <dd className="mono-number text-lg font-semibold leading-none text-slate-950">{value}</dd>
               </div>
             ))}
           </dl>
-          <div className="mt-6 rounded-xl bg-brand-50 px-4 py-3 text-left text-xs leading-5 text-brand-600">
+          <div className="mt-4 rounded-xl bg-brand-50 px-4 py-3 text-left text-[11.5px] leading-5 text-brand-600">
             Your result is ready. See your subject scores, review every answer and practise the topics that need attention.
           </div>
-          <div className="mt-6 grid gap-2 sm:grid-cols-2">
-            <Button type="button" variant="primary" size="lg" onClick={() => router.push(`/progress/results/exam/${initialAttempt.id}`)}>View results</Button>
+          <div className="mt-5 flex flex-col gap-2.5">
+            <Button type="button" variant="dark" size="lg" onClick={() => router.push(`/progress/results/exam/${initialAttempt.id}`)}>View results</Button>
             <Button type="button" variant="secondary" size="lg" onClick={() => router.push("/home")}>Back home</Button>
           </div>
         </div>
@@ -214,7 +214,7 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
   }
 
   if (!currentSubject || !currentQuestion || !currentResponse) {
-    return <div className="p-6 text-sm text-slate-600">This exam does not contain any questions to display.</div>;
+    return <div className="p-6 text-[13.5px] text-slate-600">This exam does not contain any questions to display.</div>;
   }
 
   const question = currentQuestion.question;
@@ -223,16 +223,16 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
   const timerWarning = secondsLeft <= TIMER_WARNING_SECONDS;
 
   const renderNavigator = (mobile: boolean) => (
-    <div className={mobile ? "" : "sticky top-[var(--exam-chrome)] max-h-[calc(100dvh-9rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4"}>
-      {!mobile ? <h2 className={cn("mb-4", typography.h2)}>Question navigator</h2> : null}
-      <div className="space-y-5">
+    <div className={mobile ? "" : "sticky top-[var(--exam-chrome)] max-h-[calc(100dvh-10rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4"}>
+      {!mobile ? <h2 className={cn("mb-3", typography.h2)}>Question navigator</h2> : null}
+      <div className="space-y-3.5">
         {initialAttempt.subjects.map((subject, sIndex) => {
           const stats = subjectStats.find((item) => item.subjectId === subject.id);
           return (
             <section key={subject.id}>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="truncate text-xs font-extrabold text-slate-800">{subject.name}</h3>
-                <div className="mono-number text-[10px] font-semibold text-slate-500">{stats?.answered ?? 0}/{subject.questionCount}</div>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <h3 className="truncate text-[11px] font-bold text-slate-800">{subject.name}</h3>
+                <div className="mono-number text-[10px] font-medium text-slate-500">{stats?.answered ?? 0}/{subject.questionCount}</div>
               </div>
               <div className="grid grid-cols-5 gap-1.5">
                 {subject.questions.map((item, qIndex) => {
@@ -246,12 +246,12 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
                       aria-current={isCurrent ? "true" : undefined}
                       aria-label={`${subject.name} question ${item.subjectPosition}${state.selectedOptionKey ? ", answered" : ", unanswered"}${state.isFlagged ? ", flagged" : ""}`}
                       className={cn(
-                        "relative grid min-h-11 place-items-center rounded-lg border text-[11px] font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
+                        "relative grid min-h-11 place-items-center rounded-lg border text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
                         isCurrent
-                          ? "border-brand-600 bg-brand-500 text-white ring-2 ring-brand-50"
+                          ? "border-[1.5px] border-brand-500 bg-brand-500 text-white ring-2 ring-brand-100"
                           : state.selectedOptionKey
-                            ? "border-success-200 bg-success-50 text-success-800"
-                            : "border-slate-200 bg-white text-slate-500",
+                            ? "border-success-200 bg-success-50 text-success-600"
+                            : "border-slate-200 bg-white text-slate-400",
                       )}
                     >
                       {item.subjectPosition}
@@ -268,10 +268,10 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
           );
         })}
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 text-[10px] font-semibold text-slate-600">
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3.5 text-[10px] font-semibold text-slate-600">
         <div className="flex items-center gap-1.5"><span aria-hidden="true" className="relative grid h-3 w-3 place-items-center rounded border border-success-200 bg-success-50"><span className="h-0.5 w-0.5 rounded-full bg-success-600" /></span> Answered</div>
         <div className="flex items-center gap-1.5"><span aria-hidden="true" className="h-3 w-3 rounded border border-slate-200 bg-white" /> Unanswered</div>
-        <div className="flex items-center gap-1.5"><span aria-hidden="true" className="h-3 w-3 rounded bg-brand-500 ring-2 ring-brand-50" /> Current</div>
+        <div className="flex items-center gap-1.5"><span aria-hidden="true" className="h-3 w-3 rounded bg-brand-500 ring-2 ring-brand-100" /> Current</div>
         <div className="flex items-center gap-1.5"><Flag aria-hidden="true" className="h-3 w-3 text-warning-600" fill="currentColor" /> Flagged</div>
       </div>
     </div>
@@ -286,20 +286,22 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
         wrapped, the viewport narrowed, or the browser font size grew.
       */}
       <div className="sticky top-0 z-40">
-        <header className="safe-area-top border-b border-slate-800 bg-slate-950 text-white">
-          <div className="mx-auto max-w-[1280px] px-3 pb-2.5 pt-2.5 sm:px-5">
-            <div className="flex items-center justify-between gap-3">
-              <BrandMark compact inverse />
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate text-xs font-extrabold">{initialAttempt.examName} MOCK</h1>
-                <div className="mono-number mt-0.5 truncate text-[10px] font-semibold text-white/60">{initialAttempt.examYear} · {answeredTotal}/{initialAttempt.totalQuestions} answered</div>
+        <header className="safe-area-top bg-slate-950 text-white">
+          <div className="mx-auto max-w-[1180px] px-4 pb-3 pt-3 sm:px-5">
+            <div className="flex items-center justify-between gap-3.5">
+              <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                <BrandMark compact inverse className="[&>div]:h-[26px] [&>div]:w-[26px] [&>div]:rounded-md [&>div]:text-xs" />
+                <div className="min-w-0">
+                  <h1 className="truncate text-xs font-bold">{initialAttempt.examName} Mock</h1>
+                  <div className="mono-number mt-px truncate text-[10px] text-white/50">{initialAttempt.examYear} · {answeredTotal}/{initialAttempt.totalQuestions} answered</div>
+                </div>
               </div>
               <div
                 role="timer"
                 aria-label={`Time remaining ${formatClock(secondsLeft)}`}
                 className={cn(
-                  "mono-number rounded-lg px-2.5 py-1.5 text-sm font-extrabold",
-                  timerDanger ? "bg-danger-500/25 text-danger-100" : timerWarning ? "bg-warning-500/25 text-warning-100" : "bg-white/10 text-white",
+                  "mono-number shrink-0 rounded-lg px-3 py-1.5 text-sm font-bold",
+                  timerDanger ? "bg-danger-500/25 text-danger-100" : timerWarning ? "bg-warning-500/25 text-warning-100" : "bg-white/[0.12] text-white",
                 )}
               >
                 {formatClock(secondsLeft)}
@@ -307,12 +309,18 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
             </div>
             <span aria-live="polite" className="sr-only">{timerAnnouncement}</span>
 
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3 text-[10px] font-semibold">
+            <div className="mt-2.5 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3 text-[10.5px] font-semibold">
                 <SessionStatus state={saveState} online={online} inverse />
-                <span className="inline-flex items-center gap-1.5 text-white/70">
+                {/*
+                  Offline, the save chip already reads "Offline · saved on
+                  device", so at phone widths the word here would only push the
+                  header into a second line. The icon stays; the word is kept
+                  for assistive technology and returns once there is room.
+                */}
+                <span className="inline-flex items-center gap-1.5 text-white/55">
                   {online ? <Wifi aria-hidden="true" className="h-3 w-3 text-success-300" /> : <WifiOff aria-hidden="true" className="h-3 w-3 text-danger-300" />}
-                  {online ? "Online" : "Offline"}
+                  <span className="sr-only sm:not-sr-only">{online ? "Online" : "Offline"}</span>
                 </span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -320,10 +328,10 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
                 <Button
                   type="button"
                   variant="ghost"
-                  size="md"
+                  size="sm"
                   onClick={() => setExitOpen(true)}
-                  className="text-white/70 hover:bg-white/10 hover:text-white focus-visible:ring-white focus-visible:ring-offset-slate-950"
-                  iconBefore={<LogOut className="h-4 w-4" aria-hidden="true" />}
+                  className="min-h-11 bg-white/10 text-[11.5px] text-white hover:bg-white/20 hover:text-white focus-visible:ring-white focus-visible:ring-offset-slate-950"
+                  iconBefore={<LogOut className="h-3.5 w-3.5" aria-hidden="true" />}
                 >
                   <span className="hidden sm:inline">Save &amp; exit</span>
                   <span className="sm:hidden">Exit</span>
@@ -334,8 +342,8 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
                   variant="danger"
                   size="md"
                   onClick={() => setSubmissionOpen(true)}
-                  className="focus-visible:ring-white focus-visible:ring-offset-slate-950"
-                  iconBefore={<Send className="h-4 w-4" aria-hidden="true" />}
+                  className="text-[11.5px] focus-visible:ring-white focus-visible:ring-offset-slate-950"
+                  iconBefore={<Send className="h-3.5 w-3.5" aria-hidden="true" />}
                 >
                   Submit
                 </Button>
@@ -345,13 +353,14 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
         </header>
 
         {!online ? (
-          <p className="border-b border-warning-200 bg-warning-50 px-4 py-2 text-center text-[11px] font-semibold text-warning-800">
-            You&apos;re offline. New changes stay on this device and retry automatically when the connection returns.
+          <p className="border-b border-warning-200 bg-warning-50 px-4 py-1.5 text-center text-[11.5px] font-semibold leading-[1.5] text-warning-800">
+            You&apos;re offline. New changes stay on this device and retry automatically when the connection returns.{" "}
+            <span className="font-medium">Answers must reach the server before the deadline, and uncached images need a connection.</span>
           </p>
         ) : null}
 
         <nav aria-label="Exam subjects" className="overflow-x-auto border-b border-slate-200 bg-white">
-          <div className="mx-auto flex w-max min-w-full max-w-[1280px] px-2 sm:px-4">
+          <div className="mx-auto flex w-max min-w-full max-w-[1180px] px-2 sm:px-4">
             {initialAttempt.subjects.map((subject, index) => {
               const stats = subjectStats.find((item) => item.subjectId === subject.id);
               const active = index === currentSubjectIndex;
@@ -362,12 +371,12 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
                   onClick={() => jumpTo(index, 0)}
                   aria-current={active ? "true" : undefined}
                   className={cn(
-                    "flex-none border-b-2 px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 sm:px-4 motion-reduce:transition-none",
-                    active ? "border-brand-500 text-slate-950" : "border-transparent text-slate-500",
+                    "flex-none border-b-[2.5px] px-4 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 motion-reduce:transition-none",
+                    active ? "border-brand-500 text-slate-950" : "border-transparent text-slate-400",
                   )}
                 >
                   <div className="max-w-32 truncate text-xs font-bold">{subject.name}</div>
-                  <div className="mono-number mt-0.5 text-[10px] font-semibold">{stats?.answered ?? 0}/{subject.questionCount}</div>
+                  <div className="mono-number mt-0.5 text-[10px]">{stats?.answered ?? 0}/{subject.questionCount}</div>
                 </button>
               );
             })}
@@ -375,14 +384,14 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
         </nav>
       </div>
 
-      <SyncNotice ready={sync.ready} error={sync.error} code={sync.code} online={online} expired={secondsLeft === 0} onConflict={() => void sync.resolveConflict()} onStorageRetry={() => void sync.retryStorage()} />
+      <SyncNotice ready={sync.ready} error={sync.error} code={sync.code} online={online} expired={secondsLeft === 0} offlineHandled onConflict={() => void sync.resolveConflict()} onStorageRetry={() => void sync.retryStorage()} />
 
-      <main className="mx-auto grid max-w-[1280px] gap-5 px-4 pb-28 pt-5 sm:px-5 lg:grid-cols-[minmax(0,1fr)_290px] lg:pb-24">
-        <div className="mx-auto w-full max-w-3xl lg:mx-0 lg:max-w-none">
-          <div className="mb-3 flex items-center justify-between gap-3">
+      <main className="mx-auto grid max-w-[1180px] gap-6 px-5 pb-28 pt-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:pb-24">
+        <div className="mx-auto w-full max-w-[680px] lg:mx-0 lg:max-w-none">
+          <div className="mb-2.5 flex items-center justify-between gap-3">
             <div>
-              <div className={cn(typography.eyebrow, "text-brand-600")}>{currentSubject.name}</div>
-              <h2 className="mt-1 text-sm font-extrabold text-slate-950">
+              <div className={cn(typography.eyebrow, "tracking-[0.08em] text-brand-500")}>{currentSubject.name}</div>
+              <h2 className="mt-0.5 text-[13.5px] font-bold text-slate-950">
                 Question {currentQuestion.subjectPosition} of {currentSubject.questionCount}
               </h2>
             </div>
@@ -393,25 +402,25 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
               disabled={!sync.ready || submitting || secondsLeft === 0}
               aria-pressed={currentResponse.isFlagged}
               onClick={() => queueResponse(currentQuestion.id, { ...currentResponse, isFlagged: !currentResponse.isFlagged })}
-              className={cn("min-h-11", currentResponse.isFlagged && "border-warning-300 bg-warning-50 text-warning-800 hover:bg-warning-50")}
+              className={cn("min-h-11 text-xs", currentResponse.isFlagged && "border-warning-200 bg-warning-50 text-warning-800 hover:bg-warning-50")}
               iconBefore={<Flag className="h-3.5 w-3.5" aria-hidden="true" fill={currentResponse.isFlagged ? "currentColor" : "none"} />}
             >
               {currentResponse.isFlagged ? "Flagged" : "Flag"}
             </Button>
           </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:p-7">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
             {question.passage ? (
               <button
                 type="button"
                 onClick={() => setPassageOpen(true)}
-                className="mb-4 flex w-full items-center justify-between gap-3 rounded-xl border border-brand-500/20 bg-brand-50 px-3.5 py-3 text-left transition hover:border-brand-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
+                className="mb-[18px] flex w-full items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-left transition hover:border-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
               >
                 <span>
-                  <span className={cn("block", typography.eyebrow, "text-brand-600")}>Comprehension passage</span>
-                  <span className="mt-1 block text-xs font-semibold text-slate-600">Open the passage without losing your answer</span>
+                  <span className={cn("block", typography.eyebrow, "tracking-[0.06em] text-brand-500")}>Comprehension passage</span>
+                  <span className="mt-0.5 block text-xs text-slate-800">Open without losing your answer</span>
                 </span>
-                <span className="shrink-0 text-xs font-bold text-brand-600">View passage</span>
+                <span className="shrink-0 text-xs font-bold text-brand-500">View →</span>
               </button>
             ) : null}
 
@@ -426,8 +435,8 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
               </div>
             ) : null}
 
-            <p className="text-[16px] font-semibold leading-7 text-slate-800 sm:text-[17px] sm:leading-8">{question.prompt}</p>
-            <div className="mt-6 space-y-2.5">
+            <p className="text-[17px] font-semibold leading-[1.6] text-slate-950">{question.prompt}</p>
+            <div className="mt-[22px] space-y-2.5">
               {question.options.map((option) => {
                 const selected = currentResponse.selectedOptionKey === option.key;
                 return (
@@ -441,13 +450,13 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
                     disabled={!sync.ready || submitting || secondsLeft === 0}
                     onClick={() => queueResponse(currentQuestion.id, { ...currentResponse, selectedOptionKey: option.key })}
                     className={cn(
-                      "flex min-h-14 w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm font-semibold transition",
+                      "flex min-h-[54px] w-full items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left text-[13.5px] font-medium leading-[1.5] transition",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
-                      selected ? "border-slate-950 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300",
+                      selected ? "border-[1.5px] border-slate-950 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300",
                     )}
                   >
-                    <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg text-xs font-extrabold", selected ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600")}>{option.key}</span>
-                    <span className="leading-6">{option.text}</span>
+                    <span className={cn("grid h-[30px] w-[30px] shrink-0 place-items-center rounded-lg text-xs font-bold", selected ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600")}>{option.key}</span>
+                    <span className="flex-1">{option.text}</span>
                     {selected ? <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0" /> : null}
                   </button>
                 );
@@ -459,12 +468,12 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
               size="sm"
               onClick={() => queueResponse(currentQuestion.id, { ...currentResponse, selectedOptionKey: null })}
               disabled={!sync.ready || submitting || secondsLeft === 0 || !currentResponse.selectedOptionKey}
-              className="mt-4 min-h-11 text-slate-500"
+              className="mt-3.5 min-h-11 px-0 text-xs text-slate-500 hover:bg-transparent hover:text-slate-600"
             >
               Clear answer
             </Button>
           </section>
-          <div className="mono-number mt-3 text-center text-[10px] font-semibold text-slate-500">{currentSubjectStats?.answered ?? 0}/{currentSubject.questionCount} answered in {currentSubject.name}</div>
+          <div className="mono-number mt-2.5 text-center text-[11px] text-slate-500">{currentSubjectStats?.answered ?? 0}/{currentSubject.questionCount} answered in {currentSubject.name}</div>
         </div>
 
         <aside className="hidden lg:block">{renderNavigator(false)}</aside>
@@ -474,18 +483,18 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
         The exam shell has no student tab bar, so this bar sits flush to the
         bottom edge and must not take the shared nav clearance.
       */}
-      <div className="safe-area-bottom fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-3 pb-2 pt-2 backdrop-blur">
-        <div className="mx-auto grid max-w-3xl grid-cols-[1fr_auto_1fr] gap-2 lg:max-w-5xl">
-          <Button type="button" variant="secondary" size="md" onClick={goPrevious} iconBefore={<ChevronLeft className="h-4 w-4" aria-hidden="true" />}>
+      <div className="safe-area-bottom fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/[0.97] px-3 pb-2.5 pt-2.5 backdrop-blur sm:px-4">
+        <div className="mx-auto grid max-w-[900px] grid-cols-[1fr_auto_1fr] gap-2 sm:gap-2.5">
+          <Button type="button" variant="secondary" size="lg" className="h-[46px] px-2 text-[13px] sm:px-5 sm:text-sm" onClick={goPrevious} iconBefore={<ChevronLeft className="h-4 w-4" aria-hidden="true" />}>
             Previous
           </Button>
-          <Button type="button" variant="secondary" size="md" onClick={() => setNavigatorOpen(true)} className="border-0 bg-slate-100 lg:hidden" iconBefore={<Grid3X3 className="h-4 w-4" aria-hidden="true" />}>
+          <Button type="button" variant="secondary" size="lg" onClick={() => setNavigatorOpen(true)} className="h-[46px] border-0 bg-slate-100 px-3 text-[13px] sm:px-5 sm:text-sm lg:hidden" iconBefore={<Grid3X3 className="h-4 w-4" aria-hidden="true" />}>
             Questions
           </Button>
-          <Button type="button" variant="secondary" size="md" onClick={() => setSubmissionOpen(true)} className="hidden border-0 bg-slate-100 lg:inline-flex" iconBefore={<Send className="h-4 w-4" aria-hidden="true" />}>
+          <Button type="button" variant="secondary" size="lg" onClick={() => setSubmissionOpen(true)} className="hidden h-[46px] border-0 bg-slate-100 lg:inline-flex" iconBefore={<Send className="h-4 w-4" aria-hidden="true" />}>
             Review
           </Button>
-          <Button type="button" variant="primary" size="md" onClick={goNext} iconAfter={<ChevronRight className="h-4 w-4" aria-hidden="true" />}>
+          <Button type="button" variant="primary" size="lg" className="h-[46px] px-2 text-[13px] sm:px-5 sm:text-sm" onClick={goNext} iconAfter={<ChevronRight className="h-4 w-4" aria-hidden="true" />}>
             Next
           </Button>
         </div>
@@ -506,7 +515,9 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
           open={passageOpen}
           onClose={() => setPassageOpen(false)}
           title={question.passage.title || "Read the passage carefully"}
-          description="Comprehension passage"
+          // A passage that is already titled "Comprehension passage" would
+          // otherwise have the label printed under itself.
+          description={question.passage.title === "Comprehension passage" ? undefined : "Comprehension passage"}
           size="full"
           footer={
             <Button type="button" variant="dark" size="lg" fullWidth onClick={() => setPassageOpen(false)}>
@@ -515,7 +526,7 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
           }
         >
           {/* Content is rendered exactly as normalised upstream — no parsing here. */}
-          <p className="max-w-prose whitespace-pre-line text-[15px] leading-8 text-slate-700">{question.passage.body}</p>
+          <p className="max-w-prose whitespace-pre-line text-sm leading-[1.75] text-slate-800">{question.passage.body}</p>
         </Sheet>
       ) : null}
 
@@ -548,30 +559,30 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
       >
         <dl className="grid grid-cols-3 gap-2">
           {[
-            ["Answered", answeredTotal, "bg-success-50 text-success-800", "text-success-700"],
-            ["Unanswered", unansweredTotal, "bg-slate-50 text-slate-800", "text-slate-600"],
-            ["Flagged", flaggedTotal, "bg-warning-50 text-warning-800", "text-warning-700"],
+            ["Answered", answeredTotal, "bg-success-50 text-success-600", "text-success-600"],
+            ["Unanswered", unansweredTotal, "bg-slate-50 text-slate-950", "text-slate-500"],
+            ["Flagged", flaggedTotal, "bg-warning-50 text-warning-800", "text-warning-800"],
           ].map(([label, value, tile, caption]) => (
             <div key={label as string} className={cn("flex flex-col-reverse rounded-xl p-3 text-center", tile as string)}>
-              <dt className={cn("mt-1 text-[10px] font-bold", caption as string)}>{label}</dt>
-              <dd className="mono-number text-xl font-black leading-none">{value}</dd>
+              <dt className={cn("mt-1 text-[10px] font-medium", caption as string)}>{label}</dt>
+              <dd className="mono-number text-[19px] font-semibold leading-none">{value}</dd>
             </div>
           ))}
         </dl>
 
-        <div className="mt-5 space-y-2">
+        <div className="mt-4 divide-y divide-slate-100 border-t border-slate-100">
           {initialAttempt.subjects.map((subject) => {
             const stats = subjectStats.find((item) => item.subjectId === subject.id);
             return (
-              <div key={subject.id} className="flex items-center justify-between rounded-xl border border-slate-100 px-3.5 py-3 text-sm">
-                <span className="font-bold text-slate-800">{subject.name}</span>
-                <span className="mono-number text-xs font-bold text-slate-500">{stats?.answered ?? 0}/{subject.questionCount}</span>
+              <div key={subject.id} className="flex items-center justify-between gap-3 py-2.5 text-[12.5px]">
+                <span className="font-bold text-slate-950">{subject.name}</span>
+                <span className="mono-number text-slate-500">{stats?.answered ?? 0}/{subject.questionCount}</span>
               </div>
             );
           })}
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-2">
+        <div className="mt-4 grid grid-cols-2 gap-2">
           <Button
             type="button"
             variant="secondary"
@@ -621,14 +632,14 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
           </div>
         }
       >
-        <p className="text-sm leading-6 text-slate-600">
+        <p className="text-[13px] leading-[1.6] text-slate-600">
           Every answer you have given is already saved. Leaving does not submit your paper.
         </p>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          <strong className="font-bold text-slate-900">The timer keeps running.</strong> The server controls the clock,
+        <p className="mt-2.5 text-[13px] leading-[1.6] text-slate-600">
+          <strong className="font-bold text-slate-950">The timer keeps running.</strong> The server controls the clock,
           so it continues while you are away and submits the paper automatically when time expires.
         </p>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
+        <p className="mono-number mt-2.5 text-[13px] leading-[1.6] text-slate-600">
           {answeredTotal} of {initialAttempt.totalQuestions} answered, {flaggedTotal} flagged, {formatClock(secondsLeft)} left.
         </p>
       </Sheet>

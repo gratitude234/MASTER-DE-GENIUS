@@ -203,7 +203,8 @@ test('a full result shows the scaled score, target comparison and breakdowns', a
 
   assert.ok(markup.includes('Subject breakdown'));
   assert.ok(markup.includes('Topic breakdown'));
-  assert.ok(markup.includes('<progress'), 'accuracy bars keep native value semantics');
+  assert.ok(markup.includes('role="progressbar"'), 'accuracy bars keep their value semantics');
+  assert.ok(markup.includes('aria-valuenow'), 'and expose the value, not just the fill');
   assert.ok(markup.includes('aria-label="Physics accuracy"'));
   assert.ok(markup.includes('Practise Waves'), 'the weak topic offers a revision session');
   assert.ok(markup.includes('Answer review'));

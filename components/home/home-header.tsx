@@ -30,11 +30,12 @@ export function HomeHeader({ name, examLabel, readiness, daysLeft }: HomeHeaderP
 
   return (
     <header>
+      {/* Mobile only: on desktop the rail already carries the mark. */}
       <div className="mb-5 flex items-center justify-between lg:hidden">
-        <BrandMark />
+        <BrandMark sublabel={false} className="[&>div:first-child]:h-7 [&>div:first-child]:w-7 [&>div:first-child]:text-[13px]" />
         <div
           aria-hidden="true"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-950 text-xs font-extrabold text-white"
+          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full bg-slate-950 text-xs font-bold text-white"
         >
           {initials}
         </div>
@@ -44,7 +45,7 @@ export function HomeHeader({ name, examLabel, readiness, daysLeft }: HomeHeaderP
         <div className="min-w-0">
           <h1 className={typography.h1}>Welcome back, {name}.</h1>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-slate-500">{examLabel}</span>
+            <span className="text-[13.5px] text-slate-600">{examLabel}</span>
             {daysLeft === undefined ? null : (
               <Badge tone="brand">{daysLeft} days to go</Badge>
             )}
@@ -52,9 +53,9 @@ export function HomeHeader({ name, examLabel, readiness, daysLeft }: HomeHeaderP
         </div>
 
         {readiness === undefined ? null : (
-          <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:shadow-none">
+          <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
             <span className="text-xs font-semibold text-slate-500">Readiness</span>
-            <span className="mono-number text-xl font-extrabold text-slate-950">{readiness}%</span>
+            <span className="mono-number text-xl font-semibold text-slate-950">{readiness}%</span>
           </div>
         )}
       </div>

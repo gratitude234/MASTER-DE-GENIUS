@@ -43,7 +43,7 @@ export function SkeletonCard({ className, lines = 3 }: { className?: string; lin
 /** The dark hero shell used by Home, Progress and Results. */
 export function SkeletonHero() {
   return (
-    <div className="space-y-3 rounded-3xl bg-slate-900 p-6 sm:p-8">
+    <div className="space-y-3 rounded-3xl bg-slate-950 px-[22px] py-6 lg:px-9 lg:py-8">
       <Skeleton className="h-3 w-28 bg-white/15" />
       <Skeleton className="h-8 w-56 max-w-full rounded-lg bg-white/15" />
       <Skeleton className="h-4 w-72 max-w-full bg-white/10" />

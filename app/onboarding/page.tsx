@@ -12,9 +12,13 @@ export default async function OnboardingPage() {
   const { subjects } = await getJambOnboardingCatalog();
 
   return (
-    <main className="min-h-dvh bg-slate-50 px-4 py-5 sm:px-6 sm:py-8">
-      <div className="mx-auto mb-6 max-w-3xl"><BrandMark /></div>
-      <OnboardingFlow subjects={subjects} />
+    // Onboarding is a focused task, not a workspace: the same centred 520px
+    // column at every width, with no shell around it to navigate away from.
+    <main className="grid min-h-dvh place-items-center bg-slate-50 px-6 py-8">
+      <div className="screen-enter w-full max-w-[520px]">
+        <div className="mb-7 flex justify-center"><BrandMark /></div>
+        <OnboardingFlow subjects={subjects} />
+      </div>
     </main>
   );
 }

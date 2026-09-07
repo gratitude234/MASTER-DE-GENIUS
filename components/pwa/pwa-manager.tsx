@@ -80,7 +80,7 @@ export function PwaManager() {
 
   return (
     // A passive notice: `role="status"`, no focus management, nothing autofocused.
-    <aside aria-label="App options" className="mx-auto max-w-3xl px-4 pt-4">
+    <aside aria-label="App options" className="mx-auto max-w-[1080px] px-4 pt-4 sm:px-6 lg:px-10">
       <InlineAlert tone="brand" role="status" className="items-center">
         <span className="flex flex-1 flex-wrap items-center justify-between gap-3">
           <span className="min-w-0 font-semibold">

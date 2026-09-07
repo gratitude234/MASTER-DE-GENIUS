@@ -142,7 +142,8 @@ try {
  console.log('PASS: navigator opens with focus, jumps to a question and closes');
 
  // Passage reader opens and hands focus back to a usable control.
- await page.getByRole('button',{name:/View passage/}).click();
+ // The trigger reads 'Comprehension passage … View →' in the approved system.
+ await page.getByRole('button',{name:/Comprehension passage/}).click();
  await expect(page.getByText('The passage body for the reader overlay.')).toBeVisible();
  expect(await focusInsideDialog()).toBe(true);
  await page.getByRole('button',{name:/^Back to question/}).click();

@@ -49,7 +49,7 @@ export function AuthField({
 
   return (
     <div>
-      <label htmlFor={fieldId} className="block text-xs font-bold text-slate-700">
+      <label htmlFor={fieldId} className="block text-xs font-semibold text-slate-800">
         {label}
       </label>
 
@@ -81,7 +81,7 @@ export function AuthField({
       </div>
 
       {hint ? (
-        <span id={hintId} className="mt-1.5 block text-[11px] font-medium text-slate-500">
+        <span id={hintId} className="mt-1.5 block text-[11.5px] font-medium text-slate-500">
           {hint}
         </span>
       ) : null}

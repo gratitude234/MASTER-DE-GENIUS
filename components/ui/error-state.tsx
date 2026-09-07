@@ -40,7 +40,7 @@ export function ErrorState({
     <div
       role="status"
       className={cn(
-        "flex flex-col items-center border border-slate-200 bg-white px-5 py-8 text-center sm:px-8",
+        "flex flex-col items-center border border-slate-200 bg-white px-5 py-7 text-center sm:px-8",
         radius.card,
         className,
       )}

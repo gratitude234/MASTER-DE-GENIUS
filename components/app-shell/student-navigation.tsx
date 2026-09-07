@@ -101,13 +101,19 @@ export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }
 
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[246px] flex-col bg-slate-950 px-4 pb-5 pt-6 text-white lg:flex">
-        <BrandMark inverse className="px-2" />
-        <nav className="mt-8 flex-1 overflow-y-auto" aria-label="Student navigation">
+      {/*
+        The approved desktop rail: 250px of ink, sticky for its full height,
+        with the exam card pinned to the bottom. Icons rather than the
+        prototype's glyph characters — same 16px optical size, but they carry a
+        proper accessible name and do not depend on a font that may not ship.
+      */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[250px] flex-col bg-slate-950 px-4 pb-6 pt-6 text-white lg:flex">
+        <BrandMark inverse sublabel={false} className="px-2 pb-7" />
+        <nav className="flex-1 overflow-y-auto" aria-label="Student navigation">
           {desktopGroups.map((group) => (
             <div className="mb-5" key={group.label}>
-              <div className="mb-2 px-3 text-[10px] font-bold tracking-[0.18em] text-white/35">{group.label}</div>
-              <div className="space-y-1">
+              <div className="mb-2 px-2.5 text-[10px] font-bold tracking-[0.16em] text-white/35">{group.label}</div>
+              <div className="space-y-0.5">
                 {group.items.map(({ href, label, icon: Icon }) => {
                   const active = href === desktopActive;
                   return (
@@ -116,16 +122,15 @@ export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }
                       href={href}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "flex min-h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold transition-colors motion-reduce:transition-none",
-                        // The sidebar is slate-950, so the brand ring would
-                        // disappear into it; white reads against the dark rail.
+                        "flex min-h-[38px] items-center gap-[11px] rounded-lg px-2.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none",
+                        // The sidebar is ink, so the brand ring would disappear
+                        // into it; white reads against the dark rail.
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950",
                         active ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/[0.06] hover:text-white",
                       )}
                     >
-                      <Icon aria-hidden="true" className="h-[17px] w-[17px]" strokeWidth={1.9} />
+                      <Icon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={1.9} />
                       <span>{label}</span>
-                      {active ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-500" /> : null}
                     </Link>
                   );
                 })}
@@ -133,17 +138,23 @@ export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }
             </div>
           ))}
         </nav>
-        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+        <div className="mt-auto rounded-xl border border-white/[0.08] bg-white/[0.05] p-3">
           <div className="text-xs font-bold">{examLabel ? `${examLabel.shortName} ${examLabel.year}` : "Your exam"}</div>
-          <div className="mt-1 text-[11px] leading-4 text-white/60">Your preparation workspace</div>
+          <div className="mt-0.5 text-[11px] leading-4 text-white/50">Your preparation workspace</div>
         </div>
       </aside>
 
+      {/*
+        The mobile tab bar spans the full width — five equal columns, no centred
+        max-width — so the outer tabs stay reachable with a thumb on a 430px
+        phone. State is carried by weight and colour together, never colour
+        alone, and `aria-current` states it outright.
+      */}
       <nav
         aria-label="Primary"
-        className="safe-area-bottom fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden"
+        className="safe-area-bottom fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/[0.97] backdrop-blur-lg lg:hidden"
       >
-        <div className="mx-auto grid h-[68px] max-w-lg grid-cols-5 px-2">
+        <div className="grid h-nav-height grid-cols-5">
           {mobileItems.map(({ href, label, icon: Icon }) => {
             const active = href === mobileActive;
             return (
@@ -152,13 +163,12 @@ export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-semibold",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500",
-                  active ? "text-slate-950" : "text-slate-400",
+                  "flex min-w-0 flex-col items-center justify-center gap-[3px] rounded-lg text-[10px]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset",
+                  active ? "font-bold text-slate-950" : "font-semibold text-slate-400",
                 )}
               >
-                {active ? <span className="absolute top-0 h-0.5 w-7 rounded-full bg-brand-500" /> : null}
-                <Icon aria-hidden="true" className="h-5 w-5" strokeWidth={active ? 2.3 : 1.8} />
+                <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={active ? 2.3 : 1.8} />
                 <span className="truncate">{label}</span>
               </Link>
             );

@@ -12,11 +12,18 @@ interface SyncNoticeProps {
   code: string;
   online: boolean;
   expired: boolean;
+  /**
+   * Set by a screen that already shows its own offline banner, so a
+   * disconnected student is told once rather than three times over. The screen
+   * taking this on has to carry the whole message — see the exam runner, which
+   * states the retry behaviour, the deadline and the uncached images itself.
+   */
+  offlineHandled?: boolean;
   onConflict: () => void;
   onStorageRetry: () => void;
 }
 
-export function SyncNotice({ ready, error, code, online, expired, onConflict, onStorageRetry }: SyncNoticeProps) {
+export function SyncNotice({ ready, error, code, online, expired, offlineHandled = false, onConflict, onStorageRetry }: SyncNoticeProps) {
   /*
    * A revision conflict is a high-stakes, irreversible choice, so it gets a
    * modal rather than a paragraph the student can scroll past. Dismissing it
@@ -32,14 +39,14 @@ export function SyncNotice({ ready, error, code, online, expired, onConflict, on
   }, [conflicted]);
 
   return (
-    <div className="space-y-2 px-4 py-2 text-sm leading-6" aria-live="polite">
+    <div className="space-y-2 px-4 py-2 text-[13px] leading-[1.6] empty:hidden" aria-live="polite">
       {!ready ? (
         <InlineAlert tone="warning" role="status">
           {error || "Opening secure device storage. If this session is open in another tab, close that tab to continue here."}
         </InlineAlert>
       ) : null}
 
-      {!online ? (
+      {!online && !offlineHandled ? (
         <InlineAlert tone="warning" role="status">
           Offline · Saved answers will retry when you reconnect. For timed sessions, answers must reach the server before
           the deadline. Explanations and uncached images need a connection.
@@ -88,10 +95,10 @@ export function SyncNotice({ ready, error, code, online, expired, onConflict, on
               </div>
             }
           >
-            <p className="text-sm leading-6 text-slate-600">
+            <p className="text-[13px] leading-[1.6] text-slate-600">
               This session was also open somewhere else, and that device saved an answer after yours.
             </p>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
+            <p className="mt-2.5 text-[13px] leading-[1.6] text-slate-600">
               Continuing will intentionally replace those server answers with the choices made on this device. Nothing
               changes until you choose.
             </p>

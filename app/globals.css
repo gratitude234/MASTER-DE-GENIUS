@@ -3,32 +3,20 @@
 @tailwind utilities;
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-
-  /*
-   * Legacy palette variables. Nothing in the app reads these any more — colour
-   * comes from the Tailwind theme (brand / success / danger / warning). They are
-   * kept for now so no stylesheet or inline style can break, and are scheduled
-   * for removal once the screen-by-screen migration lands. Do not add new uses.
-   */
-  --brand: #2f5af0;
-  --brand-dark: #0f172a;
-  --muted: #64748b;
-  --line: #e2e8f0;
-  --success: #15803d;
-  --danger: #dc2626;
-  --warning: #d97706;
+  /* The approved page ground and ink. Everything else comes from the Tailwind
+     theme (slate / brand / success / danger / warning) in tailwind.config.ts. */
+  --background: #F6F7FA;
+  --foreground: #0B1220;
 
   /*
    * Mobile bottom-navigation geometry — the single source of truth for every
    * sticky or fixed element that has to sit above the tab bar. The bar itself is
-   * 68px (components/app-shell/student-navigation.tsx) and the home indicator is
+   * 64px (components/app-shell/student-navigation.tsx) and the home indicator is
    * added on top of it. Tailwind exposes these as spacing tokens, so prefer
    * `bottom-nav-clearance` / `pb-nav-clearance` / `h-nav-height` over hand-written
-   * `bottom-[calc(4.25rem+env(safe-area-inset-bottom))]`.
+   * `bottom-[calc(4rem+env(safe-area-inset-bottom))]`.
    */
-  --nav-height: 4.25rem;
+  --nav-height: 4rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --nav-clearance: calc(var(--nav-height) + var(--safe-bottom));
 
@@ -42,7 +30,7 @@
    * wrapped or the browser font size changed. Only the side rail, whose exact
    * alignment is cosmetic, still reads a value — and reads it from here.
    */
-  --exam-chrome: 7rem;
+  --exam-chrome: 8.125rem;
 }
 
 * {
@@ -61,8 +49,10 @@ body {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: "Public Sans", Inter, ui-sans-serif, system-ui, -apple-system,
-    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* next/font sets --font-sans on <html>; the stack behind it is the fallback
+     used before the face loads and on a build without network access. */
+  font-family: var(--font-sans), "IBM Plex Sans", ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 button,
@@ -79,7 +69,7 @@ a {
 }
 
 ::selection {
-  background: rgba(47, 90, 240, 0.18);
+  background: rgba(42, 68, 148, 0.18);
 }
 
 .safe-area-bottom {
@@ -90,9 +80,34 @@ a {
   padding-top: env(safe-area-inset-top);
 }
 
+/*
+ * Every number a student compares — scores, counts, timers, percentages — is
+ * set in the monospaced face so digits align in a column and a changing clock
+ * does not reflow the line around it.
+ */
 .mono-number {
   font-variant-numeric: tabular-nums;
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono), "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+/*
+ * The approved screen entrance: content rises 6px as it fades in. Applied to
+ * the root of each screen, once, so navigating between screens has the same
+ * settle everywhere. Motion-sensitive users get the end state immediately.
+ */
+.screen-enter {
+  animation: screen-enter 350ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-enter {
+    animation: none;
+  }
+}
+
+@keyframes screen-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /*
@@ -131,21 +146,21 @@ dialog[data-sheet][open] {
 @media (min-width: 640px) {
   dialog[data-sheet][open] {
     align-items: center;
-    padding: 1rem;
+    padding: 1.25rem;
   }
 }
 
 dialog[data-sheet]::backdrop {
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(11, 18, 32, 0.45);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   dialog[data-sheet][open]::backdrop {
-    animation: sheet-overlay-in 160ms ease-out;
+    animation: sheet-overlay-in 150ms ease-out;
   }
 
   dialog[data-sheet][open] [data-sheet-panel] {
-    animation: sheet-panel-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
+    animation: sheet-panel-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   @media (min-width: 640px) {
@@ -161,8 +176,8 @@ dialog[data-sheet]::backdrop {
 }
 
 @keyframes sheet-panel-in {
-  from { opacity: 0; transform: translateY(6%); }
-  to { opacity: 1; transform: translateY(0); }
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
 @keyframes sheet-dialog-in {

@@ -180,7 +180,7 @@ export function PracticeSetup({
 
   if (!activeSubject) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+      <div className="mx-auto max-w-[640px] rounded-2xl border border-slate-200 bg-white p-6 text-[13.5px] leading-[1.6] text-slate-600">
         {subjects.length
           ? "None of your subjects can be practised right now while we expand the question source. Please check back shortly."
           : "No subjects are configured for your current exam preference."}
@@ -191,11 +191,11 @@ export function PracticeSetup({
   const years = Array.from({ length: 10 }, (_, index) => examYear - index);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="screen-enter mx-auto max-w-[640px] space-y-3.5">
       <div>
-        <div className={cn(typography.eyebrow, "text-brand-600")}>{isPast ? "Past questions" : "Practice"}</div>
-        <h1 className={cn("mt-2", typography.h1)}>{isPast ? "Practise by exam year" : "Build a focused session"}</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <div className={cn(typography.eyebrow, "text-brand-500")}>{isPast ? "Past questions" : "Practice"}</div>
+        <h1 className={cn("mt-1.5", typography.h1)}>{isPast ? "Practise by exam year" : "Build a focused session"}</h1>
+        <p className="mt-1 text-[13px] leading-[1.5] text-slate-600">
           {isPast
             ? `${examName} questions grouped by the year they were set.`
             : `${examName} ${examYear} · choose what you want to work on.`}
@@ -207,7 +207,7 @@ export function PracticeSetup({
         forward behave and a link can open either view directly. That makes this
         a navigation landmark rather than an ARIA tablist.
       */}
-      <nav aria-label="Practice mode" className="flex gap-1 rounded-xl bg-slate-100 p-1">
+      <nav aria-label="Practice mode" className="flex gap-0.5 rounded-xl bg-slate-100 p-[3px]">
         {[
           { key: "practice" as const, href: "/practice", label: "Practice" },
           { key: "past" as const, href: "/practice?mode=past", label: "Past questions" },
@@ -218,7 +218,7 @@ export function PracticeSetup({
             scroll={false}
             aria-current={tab === key ? "page" : undefined}
             className={cn(
-              "flex h-10 flex-1 items-center justify-center rounded-lg text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
+              "flex h-[38px] flex-1 items-center justify-center rounded-lg text-[12.5px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
               tab === key ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-900",
             )}
           >
@@ -231,24 +231,24 @@ export function PracticeSetup({
         <button
           type="button"
           onClick={() => router.push(`/practice/session/${resumeSession.id}`)}
-          className="w-full rounded-2xl border border-brand-500/20 bg-brand-50 p-4 text-left transition hover:border-brand-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
+          className="w-full rounded-2xl border border-brand-200 bg-brand-50 p-[18px] text-left transition hover:border-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
         >
-          <div className={cn(typography.eyebrow, "text-brand-600")}>Resume session</div>
+          <div className={cn(typography.eyebrow, "text-brand-500")}>Resume session</div>
           <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
             <div>
-              <div className="font-bold text-slate-950">{resumeSession.subjectName} · <span className="capitalize">{resumeSession.mode}</span></div>
-              <div className="mt-1 text-sm text-slate-600">{resumeSession.answeredCount} of {resumeSession.questionCount} answers saved</div>
+              <div className="text-[13px] font-bold text-slate-950">{resumeSession.subjectName} · <span className="capitalize">{resumeSession.mode}</span></div>
+              <div className="mt-1 text-xs text-slate-600">{resumeSession.answeredCount} of {resumeSession.questionCount} answers saved</div>
             </div>
-            <span className="shrink-0 text-sm font-bold text-brand-600">Continue →</span>
+            <span className="shrink-0 text-xs font-bold text-brand-500">Continue →</span>
           </div>
         </button>
       ) : null}
 
       {!isPast ? <QuickPracticeCard prefill={prefill} recommendation={recommendation} onApply={applyRecommendation} /> : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+      <section className="rounded-2xl border border-slate-200 bg-white p-[18px]">
         <h2 className={typography.h2}>Subject</h2>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2.5">
           {subjects.map((subject) => {
             const isUnavailable = unavailable.has(subject.slug);
             const active = !isUnavailable && subject.slug === activeSubject.slug;
@@ -260,12 +260,12 @@ export function PracticeSetup({
                 aria-pressed={isUnavailable ? undefined : active}
                 onClick={() => chooseSubject(subject.slug)}
                 className={cn(
-                  "min-h-12 rounded-xl border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
+                  "min-h-11 rounded-xl border px-3 py-2 text-[12.5px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
                   isUnavailable
                     ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
                     : active
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                      ? "border-[1.5px] border-slate-950 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-800 hover:border-slate-300",
                 )}
               >
                 {subject.name}
@@ -281,7 +281,7 @@ export function PracticeSetup({
           })}
         </div>
         {unavailable.size ? (
-          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-500">
+          <p className="mt-3 flex items-start gap-2 text-[11.5px] leading-5 text-slate-500">
             <Lock aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>Some subjects are temporarily unavailable while we expand the question source. They return automatically once ready.</span>
           </p>
@@ -289,11 +289,11 @@ export function PracticeSetup({
       </section>
 
       {isPast ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <section className="rounded-2xl border border-slate-200 bg-white p-[18px]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className={typography.h2}>Exam year</h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-[11.5px] text-slate-500">
                 {capabilities.years
                   ? "Pick one year, or mix every year we can reach."
                   : "Year filtering is not available from the current question source."}
@@ -308,7 +308,7 @@ export function PracticeSetup({
                 id="practice-year"
                 value={year}
                 onChange={(event) => setYear(event.target.value)}
-                containerClassName="mt-4"
+                containerClassName="mt-2.5"
               >
                 <option value="all">All years</option>
                 {years.map((value) => <option key={value} value={value}>{value}</option>)}
@@ -317,11 +317,11 @@ export function PracticeSetup({
           ) : null}
         </section>
       ) : capabilities.topics ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <section className="rounded-2xl border border-slate-200 bg-white p-[18px]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className={typography.h2}>Topic</h2>
-              <p className="mt-1 text-xs text-slate-500">Focus on one area or mix the whole subject.</p>
+              <p className="mt-1 text-[11.5px] text-slate-500">Focus on one area, or mix the whole subject.</p>
             </div>
             <Layers3 aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-400" />
           </div>
@@ -330,7 +330,7 @@ export function PracticeSetup({
             id="practice-topic"
             value={topicSlug}
             onChange={(event) => setTopicSlug(event.target.value)}
-            containerClassName="mt-4"
+            containerClassName="mt-2.5"
           >
             <option value="all">All topics</option>
             {activeSubject.topics.map((topic) => (
@@ -340,22 +340,22 @@ export function PracticeSetup({
         </section>
       ) : (
         /* No hidden control: the capability is absent, so the reason is shown instead. */
-        <section className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <section className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-[18px]">
           <Layers3 aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
           <div>
             <h2 className={typography.h2}>Whole-subject practice</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
+            <p className="mt-1 text-[11.5px] leading-5 text-slate-500">
               Your session covers the full subject. Topic filtering will be available with an expanded question source.
             </p>
           </div>
         </section>
       )}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-        <div className="grid gap-5 sm:grid-cols-2">
+      <section className="rounded-2xl border border-slate-200 bg-white p-[18px]">
+        <div className="grid grid-cols-2 gap-5">
           <div>
             <h2 className={typography.h2} id="practice-count-label">Questions</h2>
-            <div className="mt-3 flex gap-2" role="group" aria-labelledby="practice-count-label">
+            <div className="mt-2.5 flex gap-1.5" role="group" aria-labelledby="practice-count-label">
               {QUESTION_COUNTS.map((count) => (
                 <button
                   type="button"
@@ -363,9 +363,9 @@ export function PracticeSetup({
                   aria-pressed={questionCount === count}
                   onClick={() => setQuestionCount(count)}
                   className={cn(
-                    "h-11 flex-1 rounded-xl border text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
+                    "h-10 min-w-0 flex-1 rounded-lg border text-[12.5px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
                     questionCount === count
-                      ? "border-brand-500 bg-brand-50 text-brand-600"
+                      ? "border-[1.5px] border-brand-500 bg-brand-50 text-brand-500"
                       : "border-slate-200 text-slate-600 hover:border-slate-300",
                   )}
                 >
@@ -376,7 +376,7 @@ export function PracticeSetup({
           </div>
           <div>
             <h2 className={typography.h2} id="practice-mode-label">Mode</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-labelledby="practice-mode-label">
+            <div className="mt-2.5 grid grid-cols-2 gap-1.5" role="group" aria-labelledby="practice-mode-label">
               {(["practice", "timed"] as const).map((value) => (
                 <button
                   type="button"
@@ -384,9 +384,9 @@ export function PracticeSetup({
                   aria-pressed={mode === value}
                   onClick={() => setMode(value)}
                   className={cn(
-                    "h-11 rounded-xl border text-sm font-bold capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
+                    "h-10 rounded-lg border text-[12.5px] font-bold capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
                     mode === value
-                      ? "border-brand-500 bg-brand-50 text-brand-600"
+                      ? "border-[1.5px] border-brand-500 bg-brand-50 text-brand-500"
                       : "border-slate-200 text-slate-600 hover:border-slate-300",
                   )}
                 >
@@ -401,13 +401,13 @@ export function PracticeSetup({
           What the chosen mode actually does, before the student commits. The
           time limit is derived from the server's own rule, not restated.
         */}
-        <p aria-live="polite" className="mt-4 border-t border-slate-100 pt-4 text-xs leading-5 text-slate-600">
-          <strong className="font-bold text-slate-900">{practiceModeSummary(mode, questionCount).label}:</strong>{" "}
+        <p aria-live="polite" className="mt-4 border-t border-slate-100 pt-3.5 text-xs leading-[1.6] text-slate-600">
+          <strong className="font-bold text-slate-950">{practiceModeSummary(mode, questionCount).label}:</strong>{" "}
           {practiceModeSummary(mode, questionCount).detail}
         </p>
 
         {!isPast && capabilities.difficulty ? (
-          <div className="mt-4 border-t border-slate-100 pt-4">
+          <div className="mt-4 border-t border-slate-100 pt-3.5">
             <label htmlFor="practice-difficulty" className={cn("block", typography.h2)}>Difficulty</label>
             <Select
               id="practice-difficulty"
@@ -426,7 +426,7 @@ export function PracticeSetup({
 
       <div
         className={cn(
-          "sticky z-10 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur lg:static lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
+          "sticky z-10 rounded-2xl border border-slate-200 bg-white/[0.97] p-3 shadow-soft backdrop-blur lg:static lg:mt-2 lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none",
           // Shared tab-bar clearance, so this can never drift from the 68px bar again.
           navClearance.bottom,
         )}
@@ -435,7 +435,7 @@ export function PracticeSetup({
         <Button
           type="button"
           variant="primary"
-          size="lg"
+          size="xl"
           fullWidth
           onClick={startSession}
           loading={starting}
@@ -468,12 +468,12 @@ function QuickPracticeCard({
 }) {
   if (!prefill || recommendation.kind === "start") {
     return (
-      <section className="rounded-2xl bg-slate-950 p-5 text-white shadow-sm">
-        <h2 className={cn(typography.eyebrow, "flex items-center gap-2 text-white/60")}>
+      <section className="rounded-2xl bg-slate-950 p-[18px] text-white">
+        <h2 className={cn(typography.eyebrow, "flex items-center gap-2 text-white/55")}>
           <Sparkles aria-hidden="true" className="h-4 w-4" /> Quick practice
         </h2>
-        <p className="mt-3 text-lg font-bold">Start a practice session</p>
-        <p className="mt-1 text-sm text-white/70">
+        <p className="mt-2 font-serif text-base font-semibold">Start a practice session</p>
+        <p className="mt-1.5 text-xs leading-[1.5] text-white/60">
           {recommendation.kind === "start" && recommendation.hasHistory
             ? "Nothing is falling behind right now. Choose any subject below and set your own session."
             : "Choose a subject below. Once you finish a session, this shortcut targets whatever needs the most work."}
@@ -486,13 +486,13 @@ function QuickPracticeCard({
     <button
       type="button"
       onClick={onApply}
-      className="w-full rounded-2xl bg-slate-950 p-5 text-left text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 hover:bg-slate-900 motion-reduce:transition-none"
+      className="w-full rounded-2xl bg-slate-950 p-[18px] text-left text-white transition hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
     >
-      <span className={cn(typography.eyebrow, "flex items-center gap-2 text-white/60")}>
+      <span className={cn(typography.eyebrow, "flex items-center gap-2 text-white/55")}>
         <Sparkles aria-hidden="true" className="h-4 w-4" /> Quick practice
       </span>
-      <span className="mt-3 block text-lg font-bold">{prefill.label}</span>
-      <span className="mt-1 block text-sm text-white/70">
+      <span className="mt-2 block font-serif text-base font-semibold">{prefill.label}</span>
+      <span className="mt-1.5 block text-xs leading-[1.5] text-white/60">
         {recommendation.correct} of {recommendation.total} correct ({recommendation.accuracy}%) in your latest attempt ·
         tap to set up {DEFAULT_COUNT} questions
       </span>

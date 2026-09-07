@@ -15,7 +15,7 @@ import { typography } from "@/components/ui/variants";
 import { cn } from "@/lib/utils";
 
 const inlineLink =
-  "inline-flex min-h-12 items-center gap-1.5 rounded text-sm font-bold text-brand-600 hover:text-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2";
+  "inline-flex min-h-11 items-center gap-1.5 rounded text-[12.5px] font-bold text-brand-500 hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2";
 
 export function OfflineLauncher() {
   const [records, setRecords] = useState<OfflineRecord[]>([]);
@@ -33,7 +33,7 @@ export function OfflineLauncher() {
 
   if (active) return active.kind === "exam"
     ? <ExamAttemptRunner key={active.key} initialAttempt={active.view as ExamAttemptView} recovered />
-    : <div className="min-h-dvh bg-slate-50 p-4"><PracticeSessionRunner key={active.key} initialSession={active.view as PracticeSessionView} recovered /></div>;
+    : <div className="min-h-dvh bg-slate-50 px-4 py-5 sm:px-6"><PracticeSessionRunner key={active.key} initialSession={active.view as PracticeSessionView} recovered /></div>;
 
   const unsyncedTotal = records.reduce((total, record) => total + Object.keys(record.pending).length, 0);
 
@@ -47,15 +47,15 @@ export function OfflineLauncher() {
   };
 
   return (
-    <main className="mx-auto max-w-xl space-y-5 p-5 pt-12">
-      <p className={cn(typography.eyebrow, "text-brand-600")}>MASTER@DE&apos;GENIUS</p>
+    <main className="screen-enter mx-auto max-w-[560px] space-y-4 px-6 py-12">
+      <p className={cn(typography.eyebrow, "text-brand-500")}>MASTER@DE&apos;GENIUS</p>
       <h1 className={typography.h1}>Your saved sessions</h1>
-      <p role="status" className="text-sm leading-6 text-slate-600">{message}</p>
+      <p role="status" className="text-[13px] leading-[1.6] text-slate-600">{message}</p>
 
       {records.map(r => {
         const pending = Object.keys(r.pending).length;
         return (
-          <section key={r.key} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5">
+          <section key={r.key} className="space-y-2.5 rounded-2xl border border-slate-200 bg-white p-[18px]">
             <h2 className={typography.h2}>
               {r.kind === "exam" ? (r.view as ExamAttemptView).examName + " Mock" : (r.view as PracticeSessionView).subjectName + " Practice"}
             </h2>
@@ -63,7 +63,7 @@ export function OfflineLauncher() {
               {pending} {pending === 1 ? "change" : "changes"} not yet confirmed by the server
             </Badge>
             {r.final ? (
-              <p className="text-sm text-slate-600">This session has ended. Reconnect to see the server result.</p>
+              <p className="text-[12.5px] text-slate-600">This session has ended. Reconnect to see the server result.</p>
             ) : (
               <Button type="button" variant="primary" size="lg" onClick={() => setActive(r)}>
                 Resume saved session
@@ -84,7 +84,7 @@ export function OfflineLauncher() {
         </Button>
       ) : null}
 
-      <p className="text-xs leading-5 text-slate-500">
+      <p className="text-[11.5px] leading-5 text-slate-500">
         Anyone using this browser can access its saved sessions. Sign out or remove saved data before sharing this
         device. Timed sessions keep running while the app is closed; late answers cannot count towards the score.
       </p>
@@ -111,14 +111,14 @@ export function OfflineLauncher() {
           </div>
         }
       >
-        <p className="text-sm leading-6 text-slate-600">
+        <p className="text-[13px] leading-[1.6] text-slate-600">
           This browser is holding {records.length} saved {records.length === 1 ? "session" : "sessions"} and the
           question images cached for them.
         </p>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
+        <p className="mt-2.5 text-[13px] leading-[1.6] text-slate-600">
           {unsyncedTotal > 0 ? (
             <>
-              <strong className="font-bold text-slate-900">
+              <strong className="font-bold text-slate-950">
                 {unsyncedTotal} {unsyncedTotal === 1 ? "answer has" : "answers have"} not reached the server yet
               </strong>{" "}
               and will be lost.
@@ -127,7 +127,7 @@ export function OfflineLauncher() {
             "Every answer here has already reached the server, so nothing will be lost."
           )}
         </p>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
+        <p className="mt-2.5 text-[13px] leading-[1.6] text-slate-600">
           Nothing is deleted from your account. Your attempts, results and mistake bank stay exactly as they are, and
           you can reopen any session online.
         </p>

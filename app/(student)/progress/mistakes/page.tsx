@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 20;
 
 const inlineLink =
-  "inline-flex min-h-11 items-center gap-1.5 rounded text-sm font-extrabold text-brand-600 hover:text-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2";
+  "inline-flex min-h-11 items-center gap-1.5 rounded text-[12.5px] font-bold text-brand-500 hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2";
 
 export default async function MistakesPage({ searchParams }: { searchParams: Promise<{ subject?: string; topic?: string; status?: string; page?: string }> }) {
   const { user } = await requireOnboardedUser();
@@ -35,14 +35,14 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
   const revisionSubjects = [...new Map(filtered.map(m => [m.item.question.subject.slug, m.item.question.subject.name])).entries()];
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="screen-enter mx-auto max-w-[720px] space-y-4">
       <Link href="/progress" className={inlineLink}>
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Progress
       </Link>
 
       <header>
         <h1 className={typography.h1}>Your mistake bank</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
+        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-slate-600">
           Wrong and unanswered questions from completed attempts. Two consecutive correct answers in separate completed
           sessions mark a question as mastered. Missing it again returns it here.
         </p>
@@ -50,21 +50,21 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
 
       <form className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="mistakes-subject" className="block text-xs font-bold text-slate-700">Subject</label>
+          <label htmlFor="mistakes-subject" className="block text-xs font-semibold text-slate-800">Subject</label>
           <Select id="mistakes-subject" name="subject" defaultValue={subject} containerClassName="mt-1.5">
             <option value="">All subjects</option>
             {subjects.map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}
           </Select>
         </div>
         <div>
-          <label htmlFor="mistakes-topic" className="block text-xs font-bold text-slate-700">Topic</label>
+          <label htmlFor="mistakes-topic" className="block text-xs font-semibold text-slate-800">Topic</label>
           <Select id="mistakes-topic" name="topic" defaultValue={topic} containerClassName="mt-1.5">
             <option value="">All topics</option>
             {topics.map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}
           </Select>
         </div>
         <div>
-          <label htmlFor="mistakes-status" className="block text-xs font-bold text-slate-700">Status</label>
+          <label htmlFor="mistakes-status" className="block text-xs font-semibold text-slate-800">Status</label>
           <Select id="mistakes-status" name="status" defaultValue={mastered ? "mastered" : "active"} containerClassName="mt-1.5">
             <option value="active">Needs review</option>
             <option value="mastered">Mastered</option>
@@ -74,17 +74,21 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
         <Button variant="dark" size="lg" className="self-end">Apply filters</Button>
       </form>
 
-      <p aria-live="polite" className="text-sm font-bold text-slate-950">
+      <p aria-live="polite" className="text-[12.5px] font-bold text-slate-950">
         {filtered.length} {mastered ? "mastered questions" : filtered.length === 1 ? "question to revisit" : "questions to revisit"}
       </p>
 
       {!mastered && revisionSubjects.length > 0 ? (
-        <section className="space-y-3 rounded-2xl border border-brand-500/20 bg-brand-50 p-4">
+        <section className="space-y-2.5 rounded-2xl bg-brand-50 px-[18px] py-4">
           <h2 className={typography.h2}>Practise my mistakes</h2>
-          <p className="text-sm text-slate-600">Choose a subject. Each session uses up to 20 of your saved mistakes.</p>
+          <p className="text-[11.5px] text-slate-600">Choose a subject. Each session uses up to 20 of your saved mistakes.</p>
           <div className="flex flex-wrap gap-2">
             {revisionSubjects.map(([slug, name]) => (
-              <RevisionButton key={slug} input={{ mistakes: true, subjectSlug: slug, ...(topic ? { topicSlug: topic } : {}) }}>
+              <RevisionButton
+                key={slug}
+                input={{ mistakes: true, subjectSlug: slug, ...(topic ? { topicSlug: topic } : {}) }}
+                className={buttonClasses({ variant: "secondary", size: "sm", className: "h-[34px] rounded-full border-brand-200 text-xs text-brand-500 hover:bg-brand-100" })}
+              >
                 {name}
               </RevisionButton>
             ))}
@@ -120,17 +124,17 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
       ) : null}
 
       {filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(m => (
-        <article key={m.key} className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className={cn(typography.eyebrow, "text-brand-600")}>
+        <article key={m.key} className="rounded-2xl border border-slate-200 bg-white px-[18px] py-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className={cn(typography.eyebrow, "normal-case tracking-normal text-brand-500")}>
               {m.item.question.subject.name} · {m.item.question.topic?.name ?? "Uncategorised"}
             </h2>
             <Badge tone={m.mastered ? "success" : "warning"} dot>
               {m.mastered ? "Mastered" : `Streak ${m.streak} of 2`}
             </Badge>
           </div>
-          <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-900">{m.item.question.prompt}</p>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-2.5 whitespace-pre-wrap text-[13px] font-semibold leading-[1.5] text-slate-950">{m.item.question.prompt}</p>
+          <p className="mt-1.5 text-[11px] text-slate-500">
             {m.failures} missed {m.failures === 1 ? "attempt" : "attempts"}
           </p>
           <Link href={`/progress/results/${m.kind}/${m.resultId}#answer-review`} className={cn(inlineLink, "mt-1")}>
@@ -142,7 +146,7 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
       {pages > 1 ? (
         <nav aria-label="Mistake pages" className="flex min-h-12 items-center justify-between gap-3">
           {page > 1 ? <Link href={pageLink(page - 1)} className={inlineLink}>← Previous</Link> : <span />}
-          <span className="mono-number text-sm font-semibold text-slate-500">{page} / {pages}</span>
+          <span className="mono-number text-[12.5px] font-semibold text-slate-500">{page} / {pages}</span>
           {page < pages ? <Link href={pageLink(page + 1)} className={inlineLink}>Next →</Link> : <span />}
         </nav>
       ) : null}

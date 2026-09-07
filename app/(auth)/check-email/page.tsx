@@ -13,10 +13,10 @@ export default async function CheckEmailPage({ searchParams }: { searchParams: P
   if (mode !== "reset") redirect("/login");
 
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-sm sm:p-9">
-      <div aria-hidden="true" className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-brand-500/10 text-brand-500"><MailCheck className="h-6 w-6" /></div>
+    <section className="rounded-2xl border border-slate-200 bg-white px-7 py-9 text-center">
+      <div aria-hidden="true" className="mx-auto grid h-[52px] w-[52px] place-items-center rounded-2xl bg-brand-50 text-brand-500"><MailCheck className="h-[22px] w-[22px]" /></div>
       <h1 className={`mt-5 ${typography.h1}`}>Check your email</h1>
-      <p className="mt-2 text-sm leading-6 text-slate-500">
+      <p className="mt-1.5 text-[13.5px] leading-[1.5] text-slate-600">
         We sent a password reset link{email ? <> to <strong className="text-slate-700">{email}</strong></> : null}.
       </p>
       <Link href="/login" className={buttonClasses({ variant: "secondary", size: "md", className: "mt-7" })}>Back to sign in</Link>

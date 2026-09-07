@@ -49,7 +49,7 @@ export default async function HomePage() {
   const examLabel = `${examBody?.short_name ?? "Exam"} ${preference?.exam_year ?? ""} Preparation`.replace(/\s+/g, " ").trim();
 
   return (
-    <div className="space-y-5">
+    <div className="screen-enter space-y-4">
       {/*
         Readiness and days-to-exam are deliberately not passed: there is no
         agreed readiness formula, and the student preference stores an exam year
@@ -65,7 +65,7 @@ export default async function HomePage() {
 
       {recent ? (
         <>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-2">
             {latestMock ? (
               <LatestMockCard
                 score={latestMock.score}
@@ -81,7 +81,7 @@ export default async function HomePage() {
             <MistakesCard count={activeMistakes} />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-2">
             <SubjectPerformance
               caption="Latest attempt"
               subjects={recent.subjects.map((subject) => ({
@@ -112,7 +112,7 @@ export default async function HomePage() {
 
       <Link
         href="/offline"
-        className="inline-flex min-h-12 items-center rounded text-sm font-bold text-brand-500 hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+        className="inline-flex min-h-11 items-center rounded text-xs font-bold text-brand-500 hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
       >
         Saved sessions · Offline access →
       </Link>

@@ -3,9 +3,9 @@ import { typography } from "@/components/ui/variants";
 
 export default function ResetPasswordPage() {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+    <section className="rounded-2xl border border-slate-200 bg-white px-7 py-8">
       <h1 className={typography.h1}>Choose a new password</h1>
-      <p className="mt-2 text-sm leading-6 text-slate-500">Use at least 8 characters.</p>
+      <p className="mt-1.5 text-[13.5px] leading-[1.5] text-slate-600">Use at least 8 characters.</p>
       <div className="mt-6"><UpdatePasswordForm /></div>
     </section>
   );

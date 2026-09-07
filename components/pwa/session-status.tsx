@@ -20,6 +20,14 @@ interface Presentation {
  * One mapping from engine state to what a student sees, shared by both runners
  * so "Saved" never means two different things in two places.
  *
+ * Three words carry the whole story mid-exam — Saving…, Saved, Reconnecting… —
+ * because a student in the middle of a paper needs reassurance, not a report on
+ * the sync queue. Device-local storage is named in exactly one situation: when
+ * the connection is genuinely down and it is the true and useful thing to say.
+ * An answer that has reached this device but not yet the server is still on its
+ * way, so it reads as "Saving…" — the band underneath keeps the retry
+ * affordance, which is what the student can actually act on.
+ *
  * Being offline outranks the save state: an answer written to the device while
  * the connection is down is not "Saved" in the sense a student would read it.
  */
@@ -27,16 +35,16 @@ export function presentSaveState(state: SaveState, online: boolean): Presentatio
   if (!online) {
     return { band: "offline", label: "Offline · saved on device", tone: "warning", Icon: WifiOff };
   }
-  if (state === "saving") return { band: "working", label: "Saving", tone: "neutral", Icon: LoaderCircle };
-  if (state === "syncing") return { band: "working", label: "Syncing", tone: "neutral", Icon: RefreshCw };
-  if (state === "saved_local") return { band: "device", label: "Saved on device", tone: "warning", Icon: CloudOff };
+  if (state === "saving") return { band: "working", label: "Saving…", tone: "neutral", Icon: LoaderCircle };
+  if (state === "syncing") return { band: "working", label: "Reconnecting…", tone: "neutral", Icon: RefreshCw };
+  if (state === "saved_local") return { band: "device", label: "Saving…", tone: "neutral", Icon: CloudOff };
   return { band: "synced", label: "Saved", tone: "success", Icon: Cloud };
 }
 
 /** What a screen reader is told when a band is entered. Silence means "not worth it". */
 const ANNOUNCEMENT: Record<Presentation["band"], string | null> = {
   offline: "You are offline. Answers are saved on this device and will sync when you reconnect.",
-  device: "Saved on this device. Waiting to sync.",
+  device: "Your answers are still saving.",
   synced: "Answers saved.",
   // Saving and syncing fire on every keystroke-equivalent; announcing them
   // would talk over the question the student is trying to read.
@@ -77,8 +85,16 @@ export function SessionStatus({ state, online, onRetry, inverse = false }: Sessi
   const spinning = state === "saving" || state === "syncing";
   const icon = <Icon className={`h-3.5 w-3.5 ${spinning ? "animate-spin" : ""}`} aria-hidden="true" />;
 
+  /*
+   * On the exam's ink header the chip is tinted rather than bordered, so it
+   * reads at a glance without competing with the timer beside it.
+   */
   const chip = inverse ? (
-    <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-white/70">
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-bold ${
+        band === "synced" ? "bg-success-600/25 text-success-300" : "bg-white/10 text-white/80"
+      }`}
+    >
       {icon}
       {label}
     </span>

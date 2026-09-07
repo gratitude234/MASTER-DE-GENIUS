@@ -224,7 +224,9 @@ test('practice answer choices keep their own selection semantics', () => {
 test('the exam runner has one page heading and a real question heading', () => {
   const markup = renderExam();
   assert.equal((markup.match(/<h1/g) ?? []).length, 1);
-  assert.ok(/<h1[^>]*>JAMB MOCK<\/h1>/.test(markup), 'the paper names the page');
+  // Sentence case, per the approved system: all-caps is reserved for the 10px
+  // letter-spaced eyebrow, and this is a 12px bold title.
+  assert.ok(/<h1[^>]*>JAMB Mock<\/h1>/.test(markup), 'the paper names the page');
   assert.ok(/<h2[^>]*>\s*Question 1 of 2/.test(markup), '"Question X of Y" is a heading');
 });
 

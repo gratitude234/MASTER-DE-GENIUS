@@ -92,16 +92,18 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
   if (completion) {
     const pct = scorePercent(completion.correctCount, completion.questionCount);
     return (
-      <div className="mx-auto max-w-xl py-4 sm:py-8">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
-          <div aria-hidden="true" className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
-            <CheckCircle2 className="h-6 w-6" />
+      <div className="screen-enter mx-auto max-w-[460px] py-6 sm:py-12">
+        <div className="rounded-3xl border border-slate-200 bg-white px-8 py-10 text-center">
+          <div aria-hidden="true" className="mx-auto flex h-[52px] w-[52px] items-center justify-center rounded-2xl bg-success-50 text-success-600">
+            <CheckCircle2 className="h-[22px] w-[22px]" />
           </div>
-          <div className={cn("mt-5", typography.eyebrow, "text-brand-600")}>Session complete</div>
-          <h1 className={cn("mt-2", typography.h1)}>{completion.correctCount} / {completion.questionCount}</h1>
-          <div className="mt-1 text-sm font-semibold text-slate-500">{pct}% accuracy · {completion.answeredCount} answered</div>
-          <p className="mx-auto mt-5 max-w-md text-sm leading-6 text-slate-600">
-            Your answers are saved. Open your result to review explanations, topic performance and mistakes.
+          <div className={cn("mt-4", typography.eyebrow, "text-success-600")}>Session complete</div>
+          <p className="mono-number mt-3 text-[38px] font-semibold leading-none text-slate-950">
+            <span className="sr-only">Score: </span>{completion.correctCount} / {completion.questionCount}
+          </p>
+          <div className="mt-2 text-[13px] text-slate-500">{pct}% accuracy · {completion.answeredCount} answered</div>
+          <p className="mx-auto mt-4 max-w-md text-[13px] leading-[1.6] text-slate-600">
+            Your answers are saved. Review explanations and topic performance from your result.
           </p>
           {sync.pendingCount > 0 && (
             <div className="mt-4 text-left">
@@ -110,12 +112,13 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
               </InlineAlert>
             </div>
           )}
-          <div className="mt-6 grid gap-2 sm:grid-cols-2">
-            <Link href="/practice" className={buttonClasses({ variant: "primary", size: "lg" })}>
-              <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" /> Practise again
-            </Link>
-            <Link href={`/progress/results/practice/${initialSession.id}`} className={buttonClasses({ variant: "secondary", size: "lg" })}>
+          {/* Reviewing the result is the next step; practising again is the alternative. */}
+          <div className="mt-6 flex flex-col gap-2.5">
+            <Link href={`/progress/results/practice/${initialSession.id}`} className={buttonClasses({ variant: "dark", size: "lg" })}>
               Review results
+            </Link>
+            <Link href="/practice" className={buttonClasses({ variant: "secondary", size: "lg" })}>
+              <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" /> Practise again
             </Link>
           </div>
         </div>
@@ -125,7 +128,7 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
 
   if (!current || !currentState) {
     return (
-      <div className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+      <div className="mx-auto max-w-[680px] rounded-2xl border border-slate-200 bg-white p-6 text-[13.5px] text-slate-600">
         This practice session has no questions to display.
       </div>
     );
@@ -147,7 +150,7 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
         : "Your answers are saved on this device and will sync when you are back online. Leaving now will not lose them.";
 
   return (
-    <div className="mx-auto max-w-3xl pb-24 lg:pb-8">
+    <div className="screen-enter mx-auto max-w-[680px] pb-24 lg:pb-8">
       <header className="mb-4 flex items-center justify-between gap-3">
         <Button
           type="button"
@@ -166,7 +169,7 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
                 role="timer"
                 aria-label={`Time remaining ${formatTime(secondsLeft)}`}
                 className={cn(
-                  "mono-number inline-flex min-w-[70px] items-center justify-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold",
+                  "mono-number inline-flex min-w-[70px] items-center justify-center gap-1 rounded-full px-2.5 py-1.5 text-[12.5px] font-bold",
                   secondsLeft <= LOW_TIME_SECONDS ? "bg-danger-50 text-danger-700" : "bg-slate-950 text-white",
                 )}
               >
@@ -178,9 +181,9 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
         </div>
       </header>
 
-      <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:px-5">
-        <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-500">
-          <h1 className="truncate text-xs font-bold text-slate-700">
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3.5">
+        <div className="flex items-center justify-between gap-3 text-[11.5px] font-semibold text-slate-600">
+          <h1 className="truncate text-[11.5px] font-semibold text-slate-600">
             {initialSession.subjectName}{initialSession.topicName ? ` · ${initialSession.topicName}` : ""}
             <span className="sr-only"> practice session</span>
           </h1>
@@ -192,7 +195,7 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
           aria-valuemin={1}
           aria-valuemax={initialSession.questionCount}
           aria-label="Session progress"
-          className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"
+          className="mt-2 h-[5px] overflow-hidden rounded-full bg-slate-100"
         >
           <div className="h-full rounded-full bg-brand-500 transition-all motion-reduce:transition-none" style={{ width: `${progressPercent}%` }} />
         </div>
@@ -200,21 +203,21 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
 
       <SyncNotice ready={sync.ready} error={sync.error} code={sync.code} online={sync.online} expired={secondsLeft === 0} onConflict={() => void sync.resolveConflict()} onStorageRetry={() => void sync.retryStorage()} />
 
-      <main className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
+      <main className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className={cn(typography.eyebrow, "text-brand-600")}>
+            <h2 className={cn(typography.eyebrow, "tracking-[0.08em] text-brand-500")}>
               Question {current.position} of {initialSession.questionCount}
             </h2>
-            {question.year ? <div className="mt-1 text-xs text-slate-500">{question.year}</div> : null}
+            {question.year ? <div className="mt-1 text-[11px] text-slate-500">{question.year}</div> : null}
           </div>
-          <Badge tone="neutral" className="capitalize">{initialSession.mode} mode</Badge>
+          <Badge tone="neutral">{initialSession.mode === "timed" ? "Timed" : "Practice"} mode</Badge>
         </div>
 
         {question.passage ? (
-          <div className="mt-5 max-h-64 overflow-y-auto rounded-2xl border border-brand-500/15 bg-brand-50/60 p-4">
-            <h3 className={cn(typography.eyebrow, "text-brand-600")}>{question.passage.title || "Passage"}</h3>
-            <p className="mt-2 max-w-prose whitespace-pre-line text-sm leading-7 text-slate-700">{question.passage.body}</p>
+          <div className="mt-4 max-h-64 overflow-y-auto rounded-2xl bg-brand-50 px-4 py-3.5">
+            <h3 className={cn(typography.eyebrow, "tracking-[0.08em] text-brand-500")}>{question.passage.title || "Passage"}</h3>
+            <p className="mt-1.5 max-w-prose whitespace-pre-line text-[13px] leading-[1.7] text-slate-800">{question.passage.body}</p>
           </div>
         ) : null}
 
@@ -236,9 +239,9 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
           </div>
         ) : null}
 
-        <p className="mt-5 text-[17px] font-semibold leading-7 text-slate-950 sm:text-lg sm:leading-8">{question.prompt}</p>
+        <p className="mt-4 text-[17px] font-semibold leading-[1.55] text-slate-950">{question.prompt}</p>
 
-        <div className="mt-5 space-y-2.5">
+        <div className="mt-4 space-y-2.5">
           {question.options.map((option) => {
             const selected = currentState.selectedOptionKey === option.key;
             const correct = Boolean(feedback && feedback.correctOptionKey === option.key);
@@ -248,15 +251,15 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
             let optionClass = "border-slate-200 bg-white text-slate-800 hover:border-slate-300";
             let keyClass = "bg-slate-100 text-slate-600";
             if (selected && !feedback) {
-              optionClass = "border-brand-500 bg-brand-50 text-slate-950";
+              optionClass = "border-[1.5px] border-brand-500 bg-brand-50 text-slate-950";
               keyClass = "bg-brand-500 text-white";
             }
             if (correct) {
-              optionClass = "border-success-600 bg-success-50 text-slate-950";
+              optionClass = "border-[1.5px] border-success-600 bg-success-50 text-slate-950";
               keyClass = "bg-success-600 text-white";
             } else if (wrongSelected) {
-              optionClass = "border-danger-500 bg-danger-50 text-slate-950";
-              keyClass = "bg-danger-500 text-white";
+              optionClass = "border-[1.5px] border-danger-600 bg-danger-50 text-slate-950";
+              keyClass = "bg-danger-600 text-white";
             }
 
             return (
@@ -270,14 +273,14 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
                 aria-pressed={selected}
                 onClick={() => void sync.select(current.id, { selectedOptionKey: option.key, isFlagged: false })}
                 className={cn(
-                  "flex min-h-14 w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left text-sm font-medium leading-6 transition disabled:cursor-default",
+                  "flex min-h-[54px] w-full items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left text-[13.5px] font-medium leading-[1.5] transition disabled:cursor-default",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
                   optionClass,
                 )}
               >
-                <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold", keyClass)}>{option.key}</span>
+                <span className={cn("grid h-[30px] w-[30px] shrink-0 place-items-center rounded-lg text-xs font-bold", keyClass)}>{option.key}</span>
                 <span className="flex-1">{option.text}</span>
-                {correct ? <Check className="h-4 w-4 shrink-0 text-success-700" aria-hidden="true" /> : null}
+                {correct ? <Check className="h-4 w-4 shrink-0 text-success-600" aria-hidden="true" /> : null}
                 {wrongSelected ? <XCircle className="h-4 w-4 shrink-0 text-danger-600" aria-hidden="true" /> : null}
               </button>
             );
@@ -285,12 +288,12 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
         </div>
 
         {feedback ? (
-          <div className={cn("mt-5 rounded-2xl border p-4", feedback.isCorrect ? "border-success-200 bg-success-50/70" : "border-danger-200 bg-danger-50/70")}>
-            <p className={cn("flex items-center gap-2 text-sm font-bold", feedback.isCorrect ? "text-success-800" : "text-danger-800")}>
+          <div className={cn("mt-4 rounded-2xl border px-4 py-3.5", feedback.isCorrect ? "border-success-200 bg-success-50" : "border-danger-200 bg-danger-50")}>
+            <p className={cn("flex items-center gap-2 text-[13px] font-bold", feedback.isCorrect ? "text-success-600" : "text-danger-600")}>
               {feedback.isCorrect ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <XCircle className="h-4 w-4" aria-hidden="true" />}
               {feedback.isCorrect ? "Correct" : `Incorrect · correct answer: ${feedback.correctOptionKey}`}
             </p>
-            {feedback.explanation ? <p className="mt-2 text-sm leading-6 text-slate-700">{feedback.explanation}</p> : null}
+            {feedback.explanation ? <p className="mt-2 text-[13px] leading-[1.6] text-slate-800">{feedback.explanation}</p> : null}
             <div className="mt-3 flex flex-wrap gap-2">
               {question.topic?.name ? <Badge tone="neutral">{question.topic.name}</Badge> : null}
               {question.difficulty ? <Badge tone="neutral" className="capitalize">{question.difficulty}</Badge> : null}
@@ -307,13 +310,13 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
 
       <div
         className={cn(
-          "fixed inset-x-0 z-20 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:static lg:mt-4 lg:border-0 lg:bg-transparent lg:p-0",
+          "fixed inset-x-0 z-20 border-t border-slate-200 bg-white/[0.97] p-3 backdrop-blur lg:static lg:mt-4 lg:border-0 lg:bg-transparent lg:p-0",
           // The recovered runner lives on /offline, which has no tab bar; the
           // normal one sits inside the student shell, which does.
           recovered ? "bottom-0 safe-area-bottom" : navClearance.bottom,
         )}
       >
-        <div className="mx-auto flex max-w-3xl items-center gap-2">
+        <div className="mx-auto flex max-w-[680px] items-center gap-2.5">
           <Button
             type="button"
             variant="secondary"
@@ -381,8 +384,8 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
           </div>
         }
       >
-        <p className="text-sm leading-6 text-slate-600">{exitReassurance}</p>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
+        <p className="text-[13px] leading-[1.6] text-slate-600">{exitReassurance}</p>
+        <p className="mt-2.5 text-[13px] leading-[1.6] text-slate-600">
           {visibleAnsweredCount} of {initialSession.questionCount} answered so far.
           {isTimed ? " This is a timed session — the clock keeps running while you are away." : ""}
         </p>

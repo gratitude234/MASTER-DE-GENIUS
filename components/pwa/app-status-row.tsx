@@ -86,7 +86,7 @@ export function AppStatusRow() {
           </Button>
         ) : null}
       </div>
-      <p className={cn("mt-3 text-sm leading-6 text-slate-600")}>{detail}</p>
+      <p className={cn("mt-2.5 text-xs leading-[1.6] text-slate-600")}>{detail}</p>
     </section>
   );
 }

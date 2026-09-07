@@ -72,7 +72,16 @@ export function SignOut() {
 
   return (
     <div>
-      <Button type="button" variant="secondary" size="lg" fullWidth loading={busy} loadingLabel="Signing out…" onClick={start}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="lg"
+        fullWidth
+        loading={busy}
+        loadingLabel="Signing out…"
+        onClick={start}
+        className="border-danger-200 text-danger-600 hover:bg-danger-50 focus-visible:ring-danger-600"
+      >
         Sign out
       </Button>
       {error ? <div className="mt-2"><InlineAlert tone="danger">{error}</InlineAlert></div> : null}
@@ -104,18 +113,18 @@ export function SignOut() {
           </div>
         }
       >
-        <p className="text-sm leading-6 text-slate-600">
-          <strong className="font-bold text-slate-900">
+        <p className="text-[13px] leading-[1.6] text-slate-600">
+          <strong className="font-bold text-slate-950">
             {answers} {answers === 1 ? "answer" : "answers"}
           </strong>{" "}
           across {sessions} saved {sessions === 1 ? "session" : "sessions"} {answers === 1 ? "is" : "are"} still only on
           this device.
         </p>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
+        <p className="mt-2.5 text-[13px] leading-[1.6] text-slate-600">
           Signing out clears this device&apos;s saved data, so those answers will be lost. Anything already synced is
           safe in your account.
         </p>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
+        <p className="mt-2.5 text-[13px] leading-[1.6] text-slate-600">
           To keep them, stay signed in and reconnect until the sessions finish syncing.
         </p>
       </Sheet>

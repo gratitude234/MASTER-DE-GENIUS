@@ -19,10 +19,10 @@ export interface HeroPanelProps extends React.HTMLAttributes<HTMLElement> {
 export function HeroPanel({ className, eyebrow, action, children, ...props }: HeroPanelProps) {
   return (
     <section
-      className={cn("overflow-hidden bg-slate-950 p-6 text-white shadow-soft sm:p-8", radius.hero, className)}
+      className={cn("overflow-hidden bg-slate-950 px-[22px] py-6 text-white lg:px-9 lg:py-8", radius.hero, className)}
       {...props}
     >
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
         <div className="min-w-0">
           {eyebrow ? <p className={cn(typography.eyebrow, "text-white/60")}>{eyebrow}</p> : null}
           {children}

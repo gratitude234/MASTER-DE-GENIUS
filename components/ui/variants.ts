@@ -10,9 +10,13 @@ import { cn } from "@/lib/utils";
 
 /**
  * Radius is a three-tier rule, not a free choice:
- *   control — buttons, inputs, chips, small action tiles
- *   card    — standard cards and panels (the default)
- *   hero    — auth/onboarding shells, result heroes, sheet top corners
+ *   control — buttons, inputs, small action tiles      (10px)
+ *   card    — standard cards and panels (the default)  (14px)
+ *   hero    — auth/onboarding shells, result heroes, sheet top corners (18px)
+ *
+ * The pixel values live in tailwind.config.ts, where the whole radius scale is
+ * pinned to the approved prototype. Status chips are the exception: they are
+ * full pills, and get that from `badgeClasses` rather than from this rule.
  */
 export const radius = {
   control: "rounded-xl",
@@ -32,27 +36,33 @@ export const fieldFocusRing =
 export const disabledState = "disabled:pointer-events-none disabled:opacity-50";
 
 /**
- * The approved type scale. These are conventions for new and migrated surfaces,
- * not a global reset — existing screens adopt them screen by screen.
+ * The approved type scale, taken from the prototype.
+ *
+ * Two faces carry the hierarchy: Source Serif 4 for anything that titles a
+ * screen or a dialog, IBM Plex Sans for everything else. Numbers a student
+ * compares are monospaced — that lives on `.mono-number` in app/globals.css so
+ * non-Tailwind surfaces can reach it too.
  */
 export const typography = {
-  /** Score heroes only. */
-  display: "text-[40px] font-black leading-[1.05] tracking-[-0.04em] sm:text-5xl",
-  /** Page titles. Extrabold, not black — h1 is a frequent element. */
-  h1: "text-2xl font-extrabold tracking-[-0.02em] text-slate-950 sm:text-[28px]",
-  /** Section titles. */
-  h2: "text-[15px] font-bold text-slate-950 sm:text-base",
+  /** Score heroes only. Always paired with `mono-number`. */
+  display: "text-[38px] font-semibold leading-none tracking-[-0.02em] sm:text-[44px]",
+  /** Page titles. Serif, 24px on mobile and 30px from the desktop breakpoint. */
+  h1: "font-serif text-2xl font-semibold tracking-[-0.01em] text-slate-950 lg:text-[30px]",
+  /** Section titles inside a card. */
+  h2: "text-[13px] font-bold text-slate-950 sm:text-sm",
+  /** Serif title for a dialog, a sheet, or a panel that leads a screen. */
+  h3: "font-serif text-base font-semibold tracking-[-0.01em] text-slate-950 sm:text-[17px]",
   /** Small uppercase label above a title. */
-  eyebrow: "text-[10px] font-bold uppercase tracking-[0.14em] sm:text-[11px]",
+  eyebrow: "text-[10px] font-bold uppercase tracking-[0.12em] sm:text-[11px]",
   /** Running copy. */
-  body: "text-sm leading-6 text-slate-600 sm:text-[15px]",
+  body: "text-[13.5px] leading-[1.6] text-slate-600",
   /** Supporting copy. Never slate-300 — that shade is reserved for placeholders. */
-  caption: "text-[11px] font-medium leading-5 text-slate-500 sm:text-xs",
+  caption: "text-[11.5px] font-medium leading-[1.5] text-slate-500 sm:text-xs",
 } as const;
 
 /**
  * Tab-bar clearance for sticky mobile actions. Backed by the `--nav-clearance`
- * custom property in app/globals.css, so the 68px bar height and the safe-area
+ * custom property in app/globals.css, so the 64px bar height and the safe-area
  * inset are stated exactly once.
  */
 export const navClearance = {
@@ -70,12 +80,12 @@ export type ButtonSize = "sm" | "md" | "lg" | "xl";
 export const buttonVariantClasses: Record<ButtonVariant, string> = {
   primary: "bg-brand-500 text-white hover:bg-brand-600 focus-visible:ring-brand-500",
   secondary:
-    "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-400",
+    "border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 focus-visible:ring-slate-400",
   ghost: "bg-transparent text-slate-600 hover:bg-slate-100 focus-visible:ring-slate-400",
   danger: "bg-danger-600 text-white hover:bg-danger-700 focus-visible:ring-danger-600",
   // The high-commit action already used for sign-in, finish-session and
-  // resume-exam: slate-950 on white.
-  dark: "bg-slate-950 text-white hover:bg-slate-800 focus-visible:ring-slate-900",
+  // resume-exam: ink on white.
+  dark: "bg-slate-950 text-white hover:bg-slate-900 focus-visible:ring-slate-900",
 };
 
 /**
@@ -83,10 +93,10 @@ export const buttonVariantClasses: Record<ButtonVariant, string> = {
  * dense in-toolbar control, and is only appropriate beside other small controls.
  */
 export const buttonSizeClasses: Record<ButtonSize, string> = {
-  sm: "h-9 px-3 text-xs",
-  md: "h-11 px-4 text-sm",
+  sm: "h-9 px-3.5 text-xs",
+  md: "h-11 px-4 text-[13px]",
   lg: "h-12 px-5 text-sm",
-  xl: "h-[52px] px-6 text-sm font-extrabold",
+  xl: "h-[52px] px-6 text-[14.5px] font-bold",
 };
 
 /** Square footprint for icon-only buttons, matched to each size's height. */
@@ -98,7 +108,9 @@ export const buttonIconOnlySizeClasses: Record<ButtonSize, string> = {
 };
 
 const buttonBase = cn(
-  "relative inline-flex select-none items-center justify-center whitespace-nowrap font-bold",
+  // The prototype sets button labels at 600, not 700 — the weight it reserves
+  // for headings and numbers.
+  "relative inline-flex select-none items-center justify-center whitespace-nowrap font-semibold",
   radius.control,
   "transition duration-150 motion-reduce:transition-none",
   // Pressed feedback is owned by the primitive so it can never leak onto
@@ -148,7 +160,7 @@ export function fieldClasses({
   className,
 }: { size?: FieldSize; invalid?: boolean; className?: string } = {}): string {
   return cn(
-    "w-full border border-slate-200 bg-white px-3.5 text-slate-950 placeholder:text-slate-300",
+    "w-full border border-slate-200 bg-white px-3.5 text-[13.5px] text-slate-950 placeholder:text-slate-300",
     radius.control,
     fieldSizeClasses[size],
     "transition duration-150 motion-reduce:transition-none",
@@ -173,7 +185,7 @@ export function inlineAlertClasses({
   className,
 }: { tone?: AlertTone; className?: string } = {}): string {
   return cn(
-    "flex items-start gap-2.5 border px-3.5 py-3 text-sm font-semibold leading-5",
+    "flex items-start gap-2.5 border px-3.5 py-3 text-[12.5px] font-semibold leading-5",
     radius.control,
     alertToneClasses[tone],
     className,
@@ -191,7 +203,7 @@ export function selectClasses({
   className,
 }: { size?: SelectSize; invalid?: boolean; className?: string } = {}): string {
   return cn(
-    "w-full appearance-none border border-slate-200 bg-white pl-3.5 pr-10 font-semibold text-slate-900",
+    "w-full appearance-none border border-slate-200 bg-white pl-3.5 pr-10 text-[13.5px] font-semibold text-slate-900",
     radius.control,
     selectSizeClasses[size],
     "transition duration-150 motion-reduce:transition-none",
@@ -207,11 +219,11 @@ export function selectClasses({
 export type BadgeTone = "neutral" | "brand" | "success" | "warning" | "danger";
 
 export const badgeToneClasses: Record<BadgeTone, string> = {
-  neutral: "border-slate-200 bg-slate-50 text-slate-600",
-  brand: "border-brand-500/15 bg-brand-50 text-brand-600",
-  success: "border-success-200 bg-success-50 text-success-700",
-  warning: "border-warning-200 bg-warning-50 text-warning-800",
-  danger: "border-danger-200 bg-danger-50 text-danger-700",
+  neutral: "bg-slate-100 text-slate-600",
+  brand: "bg-brand-50 text-brand-600",
+  success: "bg-success-50 text-success-700",
+  warning: "bg-warning-50 text-warning-800",
+  danger: "bg-danger-50 text-danger-700",
 };
 
 export const badgeDotClasses: Record<BadgeTone, string> = {
@@ -227,8 +239,8 @@ export function badgeClasses({
   className,
 }: { tone?: BadgeTone; className?: string } = {}): string {
   return cn(
-    "inline-flex items-center gap-1.5 border px-2.5 py-1 text-[11px] font-bold leading-4",
-    radius.control,
+    // A full pill, borderless — the approved treatment for every status chip.
+    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-bold leading-4",
     badgeToneClasses[tone],
     className,
   );

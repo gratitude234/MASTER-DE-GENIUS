@@ -38,7 +38,9 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center border border-slate-200 bg-white px-5 py-8 text-center sm:px-8",
+        // A dashed hairline on the page ground, not a filled card: an absence
+        // should not look like a result the student earned.
+        "flex flex-col items-center border border-dashed border-slate-300 px-5 py-7 text-center sm:px-8",
         radius.card,
         className,
       )}

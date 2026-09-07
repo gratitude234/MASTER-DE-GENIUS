@@ -67,11 +67,11 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="screen-enter mx-auto max-w-[640px] space-y-4">
       <div>
-        <div className={cn(typography.eyebrow, "text-brand-600")}>Mock Exam</div>
-        <h1 className={cn("mt-2", typography.h1)}>{setup.blueprintName}</h1>
-        <p className="mt-1 text-sm text-slate-500">{setup.examName} {setup.examYear} · full multi-subject CBT simulation.</p>
+        <div className={cn(typography.eyebrow, "text-brand-500")}>Mock Exam</div>
+        <h1 className={cn("mt-1.5", typography.h1)}>{setup.blueprintName}</h1>
+        <p className="mt-1 text-[13px] leading-[1.5] text-slate-600">{setup.examName} {setup.examYear} · full multi-subject CBT simulation.</p>
       </div>
 
       {/*
@@ -89,13 +89,13 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
       )}
 
       {setup.activeAttempt ? (
-        <section className="rounded-2xl border border-brand-500/20 bg-brand-50 p-4 sm:p-5">
-          <div className="flex items-start gap-3">
-            <div aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-500 text-white"><RefreshCcw className="h-4 w-4" /></div>
+        <section className="rounded-2xl border border-brand-200 bg-brand-50 px-[18px] py-4">
+          <div className="flex items-start gap-3.5">
+            <div aria-hidden="true" className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-xl bg-brand-500 text-white"><RefreshCcw className="h-[18px] w-[18px]" /></div>
             <div className="min-w-0 flex-1">
-              <div className={cn(typography.eyebrow, "text-brand-600")}>Exam in progress</div>
-              <h2 className={cn("mt-1", typography.h2)}>{setup.activeAttempt.examName} mock</h2>
-              <p className="mt-1 text-sm text-slate-600">
+              <div className={cn(typography.eyebrow, "text-brand-500")}>Exam in progress</div>
+              <h2 className="mt-0.5 text-[14.5px] font-bold text-slate-950">{setup.activeAttempt.examName} mock</h2>
+              <p className="mt-1 text-xs text-slate-600">
                 {setup.activeAttempt.answeredCount}/{setup.activeAttempt.totalQuestions} answered · {setup.activeAttempt.flaggedCount} flagged · {remainingLabel(setup.activeAttempt.expiresAt)}
               </p>
               <Button
@@ -112,32 +112,32 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
         </section>
       ) : null}
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+      <section className="rounded-3xl border border-slate-200 bg-white p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className={cn(typography.eyebrow, "text-slate-500")}>Exam structure</h2>
-            <div className="mt-2 text-xl font-black text-slate-950">{setup.totalQuestions} questions</div>
-            <div className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500">
+            <div className="mono-number mt-2 text-[26px] font-semibold leading-none text-slate-950">{setup.totalQuestions} questions</div>
+            <div className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] text-slate-600">
               <Clock3 aria-hidden="true" className="h-4 w-4" /> {formatDuration(setup.durationSeconds)}
             </div>
           </div>
-          <div aria-hidden="true" className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-50 text-brand-600"><FileCheck2 className="h-5 w-5" /></div>
+          <div aria-hidden="true" className="grid h-[42px] w-[42px] place-items-center rounded-2xl bg-brand-50 text-brand-500"><FileCheck2 className="h-[17px] w-[17px]" /></div>
         </div>
 
-        <ul className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <ul className="mt-4 grid grid-cols-2 gap-2">
           {setup.subjects.map((subject) => (
             <li
               key={subject.id}
               className={cn(
-                "rounded-xl border p-3",
-                subject.available ? "border-slate-100 bg-slate-50" : "border-warning-200 bg-warning-50",
+                "rounded-xl px-3 py-2.5",
+                subject.available ? "bg-slate-50" : "border border-warning-200 bg-warning-50",
               )}
             >
-              <div className={cn("truncate text-sm font-bold", subject.available ? "text-slate-900" : "text-warning-900")}>
+              <div className={cn("truncate text-[12.5px] font-bold", subject.available ? "text-slate-950" : "text-warning-900")}>
                 {subject.name}
               </div>
               {subject.available ? (
-                <div className="mt-1 text-xs font-semibold text-slate-500">{subject.questionCount} questions</div>
+                <div className="mt-0.5 text-[10.5px] font-medium text-slate-500">{subject.questionCount} questions</div>
               ) : (
                 <Badge tone="warning" className="mt-1.5">Not available yet</Badge>
               )}
@@ -146,33 +146,33 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
         </ul>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+      <section className="rounded-3xl border border-slate-200 bg-white p-5">
         <h2 className={cn("flex items-center gap-2", typography.h2)}>
-          <ShieldCheck aria-hidden="true" className="h-4 w-4 text-brand-600" /> Before you begin
+          <ShieldCheck aria-hidden="true" className="h-4 w-4 text-brand-500" /> Before you begin
         </h2>
-        <ul className="mt-4 space-y-3">
+        <ul className="mt-3 space-y-2">
           {examConditions.map((condition) => (
-            <li key={condition} className="flex items-start gap-2.5 text-sm leading-6 text-slate-600">
-              <CheckCircle2 aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-success-600" />
+            <li key={condition} className="flex items-start gap-2.5 text-[12.5px] leading-[1.6] text-slate-600">
+              <CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-success-600" />
               <span>{condition}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-4 flex items-start gap-2.5 rounded-xl bg-warning-50 px-3.5 py-3 text-xs leading-5 text-warning-800">
+        <p className="mt-4 flex items-start gap-2.5 rounded-xl bg-warning-50 px-3.5 py-3 text-[11.5px] leading-5 text-warning-800">
           <Flag aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
           Once started, the timer continues even if you close the browser. Returning to MASTER@DE&apos;GENIUS will let you resume the same paper while time remains.
         </p>
       </section>
 
       {/* The consent gate is unchanged: the start button stays inert until it is ticked. */}
-      <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 focus-within:ring-2 focus-within:ring-brand-500 focus-within:ring-offset-2">
+      <label className="flex cursor-pointer items-start gap-[11px] rounded-2xl border border-slate-200 bg-white p-4 text-[12.5px] leading-[1.6] text-slate-600 focus-within:ring-2 focus-within:ring-brand-500 focus-within:ring-offset-2">
         <input
           type="checkbox"
           checked={acknowledged}
           onChange={(event) => setAcknowledged(event.target.checked)}
-          className="mt-0.5 h-4 w-4 accent-brand-500"
+          className="mt-0.5 h-4 w-4 accent-slate-950"
         />
-        <span><strong className="text-slate-900">I&apos;m ready to begin.</strong> I understand the timer starts immediately and the final submission is irreversible.</span>
+        <span><strong className="font-bold text-slate-950">I&apos;m ready to begin.</strong> I understand the timer starts immediately and the final submission is irreversible.</span>
       </label>
 
       {error ? <InlineAlert tone="danger">{error}</InlineAlert> : null}
