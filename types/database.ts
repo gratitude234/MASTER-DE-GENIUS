@@ -21,6 +21,44 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["session_creation_claims"]["Insert"]>;
         Relationships: [];
       };
+      external_api_usage: {
+        Row: {
+          id: number;
+          provider: string;
+          endpoint: string;
+          request_type: "practice" | "mock" | "probe" | "other";
+          exam_body: string | null;
+          subject: string | null;
+          requested_question_count: number | null;
+          question_count: number;
+          http_status: number | null;
+          outcome: "ok" | "retry" | "failed";
+          duration_ms: number;
+          credits_used: number | null;
+          credits_remaining: number | null;
+          provider_request_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          provider: string;
+          endpoint: string;
+          request_type: "practice" | "mock" | "probe" | "other";
+          exam_body?: string | null;
+          subject?: string | null;
+          requested_question_count?: number | null;
+          question_count?: number;
+          http_status?: number | null;
+          outcome: "ok" | "retry" | "failed";
+          duration_ms: number;
+          credits_used?: number | null;
+          credits_remaining?: number | null;
+          provider_request_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["external_api_usage"]["Insert"]>;
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;

@@ -6,7 +6,9 @@ import type {
   Topic,
 } from "@/types/domain";
 
-export type QuestionProviderId = "internal" | "aloc" | "sdash";
+export type QuestionProviderId = "internal" | "aloc" | "aloc_station" | "sdash";
+
+export type QuestionRequestType = "practice" | "mock" | "probe" | "other";
 
 export interface QuestionSourceRef {
   provider: QuestionProviderId | string;
@@ -58,6 +60,8 @@ export interface QuestionQuery {
   difficulty?: QuestionDifficulty | null;
   count: number;
   excludeSourceIds?: string[];
+  /** Server-side usage attribution. Never contains student identity. */
+  requestType?: QuestionRequestType;
 }
 
 export interface ProviderCapabilities {

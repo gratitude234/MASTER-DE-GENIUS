@@ -11,7 +11,8 @@
     "test": "node --experimental-transform-types --test tests/*.test.mjs",
     "postbuild": "node scripts/version-worker.mjs",
     "test:browser": "node tests/offline-browser.mjs",
-    "aloc:smoke": "node --experimental-transform-types scripts/aloc-smoke.mjs"
+    "aloc:smoke": "node --experimental-transform-types scripts/aloc-smoke.mjs",
+    "aloc-station:probe": "node --env-file=.env.local scripts/aloc-station-probe.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.6",

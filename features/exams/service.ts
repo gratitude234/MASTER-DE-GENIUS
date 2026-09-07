@@ -189,6 +189,7 @@ export async function createMockExamAttemptForUser(userId: string): Promise<Crea
         examBody: setup.examBody,
         subjectSlug: subject.slug,
         count: subject.questionCount,
+        requestType: "mock",
       }, provider);
 
       if (questions.length !== subject.questionCount) {

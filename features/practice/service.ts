@@ -120,6 +120,7 @@ export async function createPracticeSessionForUser(
       year: input.year ?? null,
       difficulty: input.difficulty ?? null,
       count: input.count,
+      requestType: "practice",
     },
     provider,
   );
