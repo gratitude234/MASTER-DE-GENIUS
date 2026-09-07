@@ -9,6 +9,18 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["response_revisions"]["Insert"]>;
         Relationships: [];
       };
+      rate_limit_buckets: {
+        Row: { bucket_key: string; tokens: number; updated_at: string };
+        Insert: { bucket_key: string; tokens: number; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["rate_limit_buckets"]["Insert"]>;
+        Relationships: [];
+      };
+      session_creation_claims: {
+        Row: { user_id: string; kind: string; fingerprint: string; session_id: string | null; claimed_at: string };
+        Insert: { user_id: string; kind: string; fingerprint: string; session_id?: string | null; claimed_at?: string };
+        Update: Partial<Database["public"]["Tables"]["session_creation_claims"]["Insert"]>;
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;
@@ -614,6 +626,25 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      consume_rate_limit: {
+        Args: { p_key: string; p_capacity: number; p_refill_per_second: number; p_cost?: number };
+        Returns: { allowed: boolean; remaining: number; retry_after_seconds: number }[];
+      };
+      claim_session_creation: {
+        Args: {
+          p_user_id: string;
+          p_kind: string;
+          p_fingerprint: string;
+          p_inflight_seconds?: number;
+          p_duplicate_seconds?: number;
+        };
+        Returns: { outcome: string; session_id: string | null }[];
+      };
+      settle_session_creation: {
+        Args: { p_user_id: string; p_kind: string; p_fingerprint: string; p_session_id?: string | null };
+        Returns: undefined;
+      };
+
       save_response_v2: {
         Args: { p_user_id: string; p_kind: string; p_session_id: string; p_question_id: string; p_selected_option_key: string | null; p_is_flagged: boolean; p_expected_revision: number; p_mutation_id: string };
         Returns: Json;

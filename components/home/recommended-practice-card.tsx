@@ -1,40 +1,94 @@
 import Link from "next/link";
-import { ArrowRight, Clock3 } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { RevisionButton } from "@/components/results/revision-button";
+import { buttonClasses } from "@/components/ui/variants";
+import type { PracticeRecommendation } from "@/features/home/recommendation";
 
-interface RecommendedPracticeCardProps {
-  subject: string;
-  topic: string;
-  accuracy: number;
-  questions: number;
-  minutes: number;
-}
+/**
+ * The dashboard's one dominant call to action.
+ *
+ * What it offers comes entirely from `recommendPractice`, so Home never decides
+ * for itself what is weak. When there is a weak area it starts a revision
+ * session over that attempt's own questions; when there is not, it says so
+ * rather than dressing a cold start up as a diagnosis.
+ */
+export function RecommendedPracticeCard({ recommendation }: { recommendation: PracticeRecommendation }) {
+  if (recommendation.kind === "start") {
+    return (
+      <section className="overflow-hidden rounded-2xl bg-slate-950 text-white shadow-soft">
+        <div className="px-5 py-6 sm:px-7 lg:flex lg:items-center lg:justify-between lg:gap-8">
+          <div className="min-w-0">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/60">
+              {recommendation.hasHistory ? "Keep going" : "Start here"}
+            </h2>
+            <p className="mt-3 text-xl font-extrabold tracking-[-0.02em] sm:text-2xl">
+              {recommendation.hasHistory
+                ? "Nothing is falling behind right now."
+                : "Your first practice session"}
+            </p>
+            <p className="mt-2 max-w-md text-sm leading-6 text-white/70">
+              {recommendation.hasHistory
+                ? "Every topic in your last attempt scored 70% or above. Another session will keep your accuracy where it is and surface anything new."
+                : "Pick a subject and answer a short set. Once you finish, this space shows the exact topics to work on next."}
+            </p>
+          </div>
 
-export function RecommendedPracticeCard({ subject, topic, accuracy, questions, minutes }: RecommendedPracticeCardProps) {
+          <Link
+            href="/practice"
+            className={buttonClasses({
+              variant: "primary",
+              size: "lg",
+              className: "mt-5 w-full focus-visible:ring-white focus-visible:ring-offset-slate-950 lg:mt-0 lg:w-auto",
+            })}
+          >
+            {recommendation.hasHistory ? "Practise again" : "Start practice"}
+            <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  const isTopic = recommendation.kind === "topic";
+  const title = isTopic ? recommendation.topicName : recommendation.subjectName;
+
   return (
-    <section className="overflow-hidden rounded-[18px] bg-slate-950 text-white shadow-soft">
-      <div className="px-5 py-5 sm:px-7 sm:py-6 lg:flex lg:items-center lg:justify-between lg:gap-8">
+    <section className="overflow-hidden rounded-2xl bg-slate-950 text-white shadow-soft">
+      <div className="px-5 py-6 sm:px-7 lg:flex lg:items-center lg:justify-between lg:gap-8">
         <div className="min-w-0">
-          <div className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-white/45">
+          <h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/60">
             Continue where you need it most
+          </h2>
+          <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="text-xl font-extrabold tracking-[-0.02em] sm:text-2xl">{title}</p>
+            {isTopic ? <span className="text-sm font-semibold text-white/70">{recommendation.subjectName}</span> : null}
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <h2 className="text-xl font-extrabold tracking-[-0.02em] sm:text-2xl">{subject}</h2>
-            <span className="text-sm font-semibold text-white/55">{topic}</span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-white/55">
-            <span>Recent accuracy <strong className="text-white/90">{accuracy}%</strong></span>
-            <span>{questions} questions</span>
-            <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" /> Est. {minutes} min</span>
-          </div>
+          {/* Scoped to the attempt it came from — never presented as overall mastery. */}
+          <p className="mt-3 text-sm text-white/70">
+            {recommendation.correct} of {recommendation.total} correct ({recommendation.accuracy}%) in your latest
+            attempt.
+          </p>
         </div>
 
-        <Link
-          href="/practice?quick=waves"
-          className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-5 text-sm font-extrabold text-white transition-colors hover:bg-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 lg:mt-0 lg:w-auto"
-        >
-          Start Practice
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+        <div className="mt-5 lg:mt-0 lg:shrink-0">
+          <RevisionButton
+            input={{
+              resultId: recommendation.resultId,
+              kind: recommendation.resultKind,
+              subjectSlug: recommendation.subjectSlug,
+              ...(isTopic ? { topicSlug: recommendation.topicSlug } : {}),
+            }}
+            className={buttonClasses({
+              variant: "primary",
+              size: "lg",
+              fullWidth: true,
+              className: "focus-visible:ring-white focus-visible:ring-offset-slate-950 lg:w-auto",
+            })}
+            errorClassName="mt-2 text-sm font-semibold text-danger-200"
+          >
+            Practise {title}
+          </RevisionButton>
+        </div>
       </div>
     </section>
   );

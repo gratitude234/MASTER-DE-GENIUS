@@ -2,7 +2,27 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { RevisionInput } from "@/features/results/service";
-export function RevisionButton({ input, children }: { input: RevisionInput; children: React.ReactNode }) {
+import { buttonClasses } from "@/components/ui/variants";
+
+/**
+ * Default chrome. Every caller — Home, Results and Mistakes — is now on the
+ * design system, so the default is too; `className` stays for the callers that
+ * need a different width or a ring that reads on a dark panel.
+ */
+const DEFAULT_BUTTON = buttonClasses({ variant: "primary", size: "md" });
+const DEFAULT_ERROR = "mt-2 text-sm font-semibold text-danger-700";
+
+export function RevisionButton({
+  input,
+  children,
+  className,
+  errorClassName,
+}: {
+  input: RevisionInput;
+  children: React.ReactNode;
+  className?: string;
+  errorClassName?: string;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -16,5 +36,5 @@ export function RevisionButton({ input, children }: { input: RevisionInput; chil
       router.push(`/practice/session/${payload.sessionId}`);
     } catch (e) { setError(e instanceof Error ? e.message : "Please try again."); setBusy(false); }
   }
-  return <div><button type="button" disabled={busy} onClick={start} className="min-h-12 rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{busy ? "Starting…" : children}</button>{error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}</div>;
+  return <div><button type="button" disabled={busy} aria-busy={busy || undefined} onClick={start} className={className ?? DEFAULT_BUTTON}>{busy ? "Starting…" : children}</button>{error && <p role="alert" className={errorClassName ?? DEFAULT_ERROR}>{error}</p>}</div>;
 }

@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { CanonicalQuestion, QuestionPassage } from "@/features/questions/types";
 import type { ExamBody, QuestionAsset, QuestionOption } from "@/types/domain";
 

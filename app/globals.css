@@ -5,6 +5,13 @@
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
+
+  /*
+   * Legacy palette variables. Nothing in the app reads these any more — colour
+   * comes from the Tailwind theme (brand / success / danger / warning). They are
+   * kept for now so no stylesheet or inline style can break, and are scheduled
+   * for removal once the screen-by-screen migration lands. Do not add new uses.
+   */
   --brand: #2f5af0;
   --brand-dark: #0f172a;
   --muted: #64748b;
@@ -12,6 +19,30 @@
   --success: #15803d;
   --danger: #dc2626;
   --warning: #d97706;
+
+  /*
+   * Mobile bottom-navigation geometry — the single source of truth for every
+   * sticky or fixed element that has to sit above the tab bar. The bar itself is
+   * 68px (components/app-shell/student-navigation.tsx) and the home indicator is
+   * added on top of it. Tailwind exposes these as spacing tokens, so prefer
+   * `bottom-nav-clearance` / `pb-nav-clearance` / `h-nav-height` over hand-written
+   * `bottom-[calc(4.25rem+env(safe-area-inset-bottom))]`.
+   */
+  --nav-height: 4.25rem;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-clearance: calc(var(--nav-height) + var(--safe-bottom));
+
+  /*
+   * Sticky offset for the CBT runner's desktop question navigator, which sits
+   * beside content that scrolls under the pinned exam chrome.
+   *
+   * The chrome itself needs no offset any more: its header, offline banner and
+   * subject tabs share one sticky container, so they stack by normal layout
+   * instead of the hardcoded `top-[88px]` that broke whenever the exam title
+   * wrapped or the browser font size changed. Only the side rail, whose exact
+   * alignment is cosmetic, still reads a value — and reads it from here.
+   */
+  --exam-chrome: 7rem;
 }
 
 * {
@@ -62,4 +93,79 @@ a {
 .mono-number {
   font-variant-numeric: tabular-nums;
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+/*
+ * Chrome for the shared Sheet primitive (components/ui/sheet.tsx). The element
+ * is a native <dialog>, which already provides the focus trap, focus
+ * restoration and Escape handling; these rules only reset the UA box so the
+ * panel can be a mobile bottom sheet and a centred desktop dialog.
+ */
+dialog[data-sheet] {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  color: inherit;
+}
+
+/*
+ * Flex centring rather than absolute positioning: it leaves the panel's own
+ * transform free for the entrance animation, and keeps the mobile sheet flush
+ * to the bottom edge.
+ */
+dialog[data-sheet][open] {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  dialog[data-sheet][open] {
+    align-items: center;
+    padding: 1rem;
+  }
+}
+
+dialog[data-sheet]::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog[data-sheet][open]::backdrop {
+    animation: sheet-overlay-in 160ms ease-out;
+  }
+
+  dialog[data-sheet][open] [data-sheet-panel] {
+    animation: sheet-panel-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  @media (min-width: 640px) {
+    dialog[data-sheet][open] [data-sheet-panel] {
+      animation-name: sheet-dialog-in;
+    }
+  }
+}
+
+@keyframes sheet-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sheet-panel-in {
+  from { opacity: 0; transform: translateY(6%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sheet-dialog-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
 }

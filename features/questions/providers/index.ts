@@ -12,7 +12,10 @@ const providers: Partial<Record<QuestionProviderId, QuestionProvider>> = {
 };
 
 export function getQuestionProvider(id?: string): QuestionProvider {
-  const providerId = (id ?? process.env.QUESTION_PROVIDER ?? "internal") as QuestionProviderId;
+  // Trimmed to match how the practice and exam services already read this, so a
+  // stray space in a deployment variable cannot make the registry disagree with
+  // the callers about which provider is active.
+  const providerId = (id?.trim() || process.env.QUESTION_PROVIDER?.trim() || "internal") as QuestionProviderId;
   const provider = providers[providerId];
 
   if (!provider) {

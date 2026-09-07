@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireExamApiUser } from "@/features/exams/api";
 import { startRevision } from "@/features/results/service";
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 export async function POST(request: Request) {
   const user = await requireExamApiUser();
   if (!user) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
+  // Revision spends no provider quota, but it reads and re-grades the student's
+  // whole history, so it is limited to protect the database.
+  const limited = await enforceRateLimit(RATE_LIMITS.revisionCreate, user.id);
+  if (limited) return limited;
   try {
     const input: unknown = await request.json();
     if (!input || typeof input !== "object") throw new Error("Invalid revision request.");

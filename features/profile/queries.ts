@@ -1,4 +1,7 @@
 import { requireOnboardedUser } from "@/lib/auth";
+import type { createClient } from "@/lib/supabase/server";
+
+type ServerClient = Awaited<ReturnType<typeof createClient>>;
 
 export async function getStudentProfile() {
   const { supabase, user, profile } = await requireOnboardedUser();
@@ -28,4 +31,34 @@ export async function getStudentProfile() {
   }
 
   return { user, profile, preference, examBody, subjects };
+}
+
+/**
+ * The sidebar's workspace badge, which needs the exam label and nothing else.
+ *
+ * Takes the caller's client and user id rather than re-authenticating: the
+ * student layout has already resolved both, and a second `getUser()` on every
+ * navigation would be a round trip for two columns. Returns null instead of
+ * throwing — a missing preference should dim one badge, not fail every route.
+ */
+export async function getStudentExamLabel(
+  supabase: ServerClient,
+  userId: string,
+): Promise<{ shortName: string; year: number } | null> {
+  const { data: preference } = await supabase
+    .from("student_exam_preferences")
+    .select("exam_body_id, exam_year")
+    .eq("user_id", userId)
+    .eq("is_primary", true)
+    .maybeSingle();
+
+  if (!preference) return null;
+
+  const { data: exam } = await supabase
+    .from("exam_bodies")
+    .select("short_name")
+    .eq("id", preference.exam_body_id)
+    .maybeSingle();
+
+  return exam?.short_name ? { shortName: exam.short_name, year: preference.exam_year } : null;
 }

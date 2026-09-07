@@ -5,6 +5,7 @@ import type { PracticeCatalogSubject, PracticeCatalogTopic } from "@/features/qu
 
 export async function getPracticeCatalog(): Promise<{
   examCode: string;
+  examBodyId: string;
   examName: string;
   examYear: number;
   subjects: PracticeCatalogSubject[];
@@ -93,6 +94,7 @@ export async function getPracticeCatalog(): Promise<{
 
   return {
     examCode: exam.code,
+    examBodyId: preference.exam_body_id,
     examName: exam.short_name,
     examYear: preference.exam_year,
     subjects,

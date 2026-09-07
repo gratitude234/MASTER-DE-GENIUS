@@ -2,10 +2,13 @@
 import { chromium, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-const base=process.env.TEST_BASE_URL || 'http://localhost:3000';
+const base=process.env.TEST_BASE_URL || 'http://127.0.0.1:3000';
 const server=process.env.TEST_START_SERVER==='1' ? spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1'],{stdio:['ignore','pipe','pipe']}) : null;
 if(server) await new Promise((resolve,reject)=>{server.stdout.on('data',d=>{if(d.toString().includes('Ready in'))resolve()});server.stderr.on('data',d=>process.stderr.write(d));server.on('exit',code=>reject(new Error('Server exited '+code)))});
-const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
+// channel:'chromium' selects the full browser in new headless mode. Playwright's
+// default headless shell crashes on navigator.serviceWorker, which is most of
+// what this file exists to verify.
+const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{channel:'chromium'}),args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
 const context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'allow'});
 let page=await context.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -65,7 +68,7 @@ try {
   await route.fulfill({json:{attemptId:id,status:'submitted',answeredCount:2,flaggedCount:1,totalQuestions:2,submittedAt:new Date().toISOString(),submissionReason:'manual'}});
  });
  await context.setOffline(false);
- await page.getByRole('button',{name:'Submit',exact:true}).click();await page.getByRole('button',{name:'Submit Exam',exact:true}).click();
+ await page.getByRole('button',{name:'Submit',exact:true}).click();await page.getByRole('button',{name:/^Submit exam/}).click();
  await expect(page.getByText('Your answers are locked in.')).toBeVisible();expect(writes).toBe(2);expect(submissions).toBe(1);expect((await local()).final).toBe(true);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  console.log('PASS: offline answers/flags, reload, close/reopen, cursor, one tab writer, sync-before-submit and 390px layout');
@@ -87,6 +90,126 @@ try {
  await context.route('**/api/practice/sessions/*/complete',async r=>{expect(practiceWrites).toBe(2);await r.fulfill({json:{sessionId:id,status:'completed',answeredCount:2,correctCount:1,questionCount:2,completedAt:new Date().toISOString()}})});
  await context.setOffline(false);await page.getByRole('button',{name:'Finish session'}).click();await expect(page.getByText('Session complete',{exact:true})).toBeVisible();
  console.log('PASS: practice offline lock, pending preservation and completion after sync');
+
+ // ---- Phase 6 dialog interactions, in a real browser ----
+ // Every overlay is a native <dialog>: focus trapping, restoration and Escape
+ // come from the platform. What matters here is that each one is wired to the
+ // right state, and that none of them can reach the engine's finish path.
+ let submitCalls=0;
+ await context.route('**/api/exam/attempts/*/submit',route=>{submitCalls++;return route.fulfill({json:{attemptId:id,status:'submitted',answeredCount:0,flaggedCount:0,totalQuestions:2,submittedAt:new Date().toISOString(),submissionReason:'manual'}})});
+ const dialogsOpen=()=>page.evaluate(()=>[...document.querySelectorAll('dialog')].filter(d=>d.open).length);
+ const focusInsideDialog=()=>page.evaluate(()=>Boolean(document.activeElement?.closest('dialog[open]')));
+
+ await page.goto(base+'/offline');
+ const interactive=makeRecord();
+ interactive.view.subjects[0].questions[1].question.passage={title:'Reading passage',body:'The passage body for the reader overlay.'};
+ await seed(interactive);await page.reload();await context.setOffline(true);
+ await page.getByRole('button',{name:'Resume saved session'}).click();
+
+ // Submit opens the review; it never submits, and closing leaves the exam running.
+ await page.getByRole('button',{name:'Submit',exact:true}).click();
+ await expect(page.getByText('Check before you submit')).toBeVisible();
+ expect(await focusInsideDialog()).toBe(true);
+ expect(submitCalls).toBe(0);
+ await page.getByRole('button',{name:'Continue exam'}).click();
+ await expect(page.getByText('Check before you submit')).toBeHidden();
+ await expect(page.getByRole('button',{name:'A Option A',exact:true})).toBeVisible();
+ expect(submitCalls).toBe(0);
+
+ // Escape dismisses the review without submitting or ending the exam.
+ await page.getByRole('button',{name:'Submit',exact:true}).click();
+ await page.keyboard.press('Escape');
+ await expect(page.getByText('Check before you submit')).toBeHidden();
+ expect(await dialogsOpen()).toBe(0);
+ expect(submitCalls).toBe(0);
+ await expect(page.getByRole('button',{name:'A Option A',exact:true})).toBeVisible();
+ console.log('PASS: Submit opens the review; closing and Escape neither submit nor end the exam');
+
+ // Navigator opens, takes focus, jumps to a question, and closes.
+ await page.getByRole('button',{name:'Questions'}).click();
+ expect(await focusInsideDialog()).toBe(true);
+ await page.getByRole('button',{name:/Physics question 2/}).click();
+ await expect(page.getByText('Offline test question 2: choose an option.')).toBeVisible();
+ expect(await dialogsOpen()).toBe(0);
+ await page.getByRole('button',{name:'Questions'}).click();
+ await page.keyboard.press('Escape');
+ expect(await dialogsOpen()).toBe(0);
+ await expect(page.getByText('Offline test question 2: choose an option.')).toBeVisible();
+ console.log('PASS: navigator opens with focus, jumps to a question and closes');
+
+ // Passage reader opens and hands focus back to a usable control.
+ await page.getByRole('button',{name:/View passage/}).click();
+ await expect(page.getByText('The passage body for the reader overlay.')).toBeVisible();
+ expect(await focusInsideDialog()).toBe(true);
+ await page.getByRole('button',{name:/^Back to question/}).click();
+ expect(await dialogsOpen()).toBe(0);
+ expect(await page.evaluate(()=>document.activeElement&&document.activeElement!==document.body)).toBe(true);
+ await expect(page.getByText('Offline test question 2: choose an option.')).toBeVisible();
+ expect(submitCalls).toBe(0);
+ console.log('PASS: passage reader opens, closes and restores usable focus');
+
+ // Only the review's own control reaches the engine's finish path.
+ await context.setOffline(false);
+ await page.getByRole('button',{name:'Submit',exact:true}).click();
+ await page.getByRole('button',{name:/^Submit exam/}).click();
+ await expect(page.getByText('Your answers are locked in.')).toBeVisible();
+ expect(submitCalls).toBe(1);
+ console.log('PASS: the submission review is the only path that submits the paper');
+
+ // Practice: Exit confirms, Stay keeps the session, Leave navigates without completing.
+ let completeCalls=0;
+ await context.route('**/api/practice/sessions/*/complete',route=>{completeCalls++;return route.fulfill({json:{sessionId:id,status:'completed',answeredCount:0,correctCount:0,questionCount:2,completedAt:new Date().toISOString()}})});
+ await page.goto(base+'/offline');
+ const exitPractice=makeRecord();exitPractice.kind='practice';exitPractice.key=userId+':practice:'+id;
+ exitPractice.view={id,userId,serverNow:Date.now(),mode:'practice',status:'in_progress',subjectName:'Physics',subjectSlug:'physics',requestedCount:2,questionCount:2,answeredCount:0,correctCount:0,sourceProvider:'internal',startedAt:new Date().toISOString(),expiresAt:null,questions:interactive.view.subjects[0].questions.map((q,n)=>({...q,position:n+1}))};
+ await seed(exitPractice);await page.reload();await context.setOffline(true);
+ await page.getByRole('button',{name:'Resume saved session'}).click();
+
+ await page.getByRole('button',{name:'Exit'}).click();
+ await expect(page.getByText('Leave this practice session?')).toBeVisible();
+ expect(await focusInsideDialog()).toBe(true);
+ await page.getByRole('button',{name:'Stay in this session'}).click();
+ await expect(page.getByText('Leave this practice session?')).toBeHidden();
+ await expect(page.getByRole('button',{name:'A Option A',exact:true})).toBeVisible();
+
+ await page.getByRole('button',{name:'Exit'}).click();
+ await page.keyboard.press('Escape');
+ await expect(page.getByText('Leave this practice session?')).toBeHidden();
+ await expect(page.getByRole('button',{name:'A Option A',exact:true})).toBeVisible();
+
+ await page.getByRole('button',{name:'Exit'}).click();
+ await page.getByRole('link',{name:'Leave session'}).click();
+ await expect(page.getByRole('heading',{name:'Your saved sessions'})).toBeVisible();
+ expect(completeCalls).toBe(0);
+ console.log('PASS: practice Exit confirms; Stay and Escape keep the session; Leave navigates without completing');
+
+ // Conflict: the sheet opens on a server conflict, "Decide later" resolves
+ // nothing, it can be reopened, and only the existing action retries the write.
+ let conflictWrites=0;
+ await context.unroute('**/api/exam/attempts/*/response');
+ await context.route('**/api/exam/attempts/*/response',async route=>{
+  conflictWrites++;
+  const body=route.request().postDataJSON();
+  if(conflictWrites===1)return route.fulfill({status:409,json:{error:'Another device saved a newer answer.',code:'CONFLICT',serverNow:Date.now()}});
+  return route.fulfill({json:{...body,revision:body.expectedRevision+1,serverNow:Date.now()}});
+ });
+ await page.goto(base+'/offline');await seed(makeRecord());await page.reload();
+ await page.getByRole('button',{name:'Resume saved session'}).click();
+ await page.getByRole('button',{name:'A Option A',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Another device saved a newer answer'})).toBeVisible();
+ const writesAtConflict=conflictWrites;
+ await page.getByRole('button',{name:'Decide later'}).click();
+ await expect(page.getByRole('heading',{name:'Another device saved a newer answer'})).toBeHidden();
+ expect(conflictWrites).toBe(writesAtConflict);
+ await page.getByRole('button',{name:'Choose what to keep'}).click();
+ await expect(page.getByRole('heading',{name:'Another device saved a newer answer'})).toBeVisible();
+ await page.getByRole('button',{name:/Keep this device/}).click();
+ await expect.poll(()=>conflictWrites).toBeGreaterThan(writesAtConflict);
+ console.log('PASS: conflict sheet opens, defers without resolving, reopens and runs the existing handler');
+ await context.unroute('**/api/exam/attempts/*/response');
+ await context.route('**/api/exam/attempts/*/response',r=>r.fulfill({status:503,json:{error:'Fixture connection unavailable'}}));
+ await context.setOffline(false);
+
  // Installing an update while this tab is open does not activate it or reload the runner.
  const priorController=await page.evaluate(()=>navigator.serviceWorker.controller.scriptURL);
  await page.evaluate(()=>navigator.serviceWorker.register('/sw.js?update-test=1',{scope:'/'}));

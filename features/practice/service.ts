@@ -12,11 +12,11 @@ import type {
   PracticeSessionView,
   SavePracticeAnswerResult,
 } from "@/features/practice/types";
+import { TIMED_SECONDS_PER_QUESTION } from "@/features/practice/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database, Json } from "@/types/database";
 import type { ExamBody, QuestionOption } from "@/types/domain";
 
-const TIMED_SECONDS_PER_QUESTION = 60;
 const EXAM_CODES = new Set<ExamBody>(["jamb", "waec", "neco", "post_utme", "school"]);
 const OPTION_KEYS = new Set<QuestionOption["key"]>(["A", "B", "C", "D", "E"]);
 
@@ -230,7 +230,16 @@ export async function loadPracticeSessionForUser(userId: string, sessionId: stri
     requestedCount: typedSession.requested_count,
     questionCount: typedSession.question_count,
     answeredCount: typedSession.answered_count,
-    correctCount: typedSession.correct_count,
+    /*
+     * Withheld under exactly the rule that governs per-question feedback.
+     *
+     * A running correct count is an answer key in aggregate: during a timed
+     * session a student could answer one question, reload, and read off whether
+     * it was right — the very thing `feedback` is withheld to prevent. It is
+     * null rather than 0 so the client can tell "not available yet" from a
+     * genuine score of zero.
+     */
+    correctCount: revealFeedback ? typedSession.correct_count : null,
     sourceProvider: typedSession.source_provider,
     startedAt: typedSession.started_at,
     expiresAt: typedSession.expires_at,

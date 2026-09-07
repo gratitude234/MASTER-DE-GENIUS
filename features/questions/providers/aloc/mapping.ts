@@ -1,3 +1,5 @@
+import "server-only";
+
 import { QuestionProviderUnsupportedFilterError } from "@/features/questions/errors";
 import type { ExamBody } from "@/types/domain";
 

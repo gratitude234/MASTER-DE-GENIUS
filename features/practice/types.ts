@@ -1,6 +1,13 @@
 import type { StudentQuestion } from "@/features/questions/types";
 import type { QuestionDifficulty, QuestionOption } from "@/types/domain";
 
+/**
+ * A timed practice session allows one minute per question. Defined here rather
+ * than in the service so the setup screen can state the real limit before a
+ * student commits, and the two can never drift apart.
+ */
+export const TIMED_SECONDS_PER_QUESTION = 60;
+
 export type PracticeMode = "practice" | "timed";
 export type PracticeSessionStatus = "in_progress" | "completed" | "expired" | "abandoned";
 export type PracticeSaveState = "saved" | "saving" | "saved_local" | "syncing";
@@ -44,7 +51,11 @@ export interface PracticeSessionView {
   requestedCount: number;
   questionCount: number;
   answeredCount: number;
-  correctCount: number;
+  /**
+   * Null while correctness must stay hidden — an in-progress timed session.
+   * Null means "not available yet", never a score of zero.
+   */
+  correctCount: number | null;
   sourceProvider: string;
   startedAt: string;
   expiresAt?: string | null;

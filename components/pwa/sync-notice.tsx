@@ -1,12 +1,114 @@
 "use client";
-export function SyncNotice({ ready, error, code, online, expired, onConflict, onStorageRetry }: { ready: boolean; error: string; code: string; online: boolean; expired: boolean; onConflict: () => void; onStorageRetry: () => void }) {
-  return <div className="space-y-2 px-4 py-2 text-sm leading-6" aria-live="polite">
-    {!ready && <p className="rounded-xl bg-amber-50 p-3 text-amber-900">{error || "Opening secure device storage. If this session is open in another tab, close that tab to continue here."}</p>}
-    {!online && <p className="rounded-xl bg-amber-50 p-3 text-amber-900">Offline · Saved answers will retry when you reconnect. For timed sessions, answers must reach the server before the deadline. Explanations and uncached images need a connection.</p>}
-    {expired && <p className="rounded-xl bg-blue-50 p-3 text-blue-900">Time is up. Reconnect to finish submission. Local changes received after the deadline cannot count towards your score.</p>}
-    {ready && error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</p>}
-    {code === "STORAGE" && <button type="button" onClick={onStorageRetry} className="min-h-12 rounded-xl bg-slate-950 px-4 font-bold text-white">Retry device storage</button>}
-    {code === "CONFLICT" && <div className="rounded-xl border border-amber-300 bg-white p-3"><p>Another device saved a newer answer. Your local changes are preserved. Continuing will intentionally replace those server answers with this device’s choices.</p><button type="button" onClick={onConflict} className="mt-2 min-h-12 rounded-xl bg-slate-950 px-4 font-bold text-white">Keep this device’s changes</button></div>}
-    {code === "AUTH" && <a href="/login" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-12 items-center font-bold text-blue-700">Sign in in a new tab, then return here</a>}
-  </div>;
+
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { InlineAlert } from "@/components/ui/inline-alert";
+import { Sheet } from "@/components/ui/sheet";
+import { buttonClasses } from "@/components/ui/variants";
+
+interface SyncNoticeProps {
+  ready: boolean;
+  error: string;
+  code: string;
+  online: boolean;
+  expired: boolean;
+  onConflict: () => void;
+  onStorageRetry: () => void;
+}
+
+export function SyncNotice({ ready, error, code, online, expired, onConflict, onStorageRetry }: SyncNoticeProps) {
+  /*
+   * A revision conflict is a high-stakes, irreversible choice, so it gets a
+   * modal rather than a paragraph the student can scroll past. Dismissing it
+   * resolves nothing: the notice below stays, and reopening is one tap away.
+   * There is still exactly one action, and it is still `onConflict` — no merge
+   * behaviour is invented here, and nothing resolves on its own.
+   */
+  const conflicted = code === "CONFLICT";
+  const [conflictDismissed, setConflictDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!conflicted) setConflictDismissed(false);
+  }, [conflicted]);
+
+  return (
+    <div className="space-y-2 px-4 py-2 text-sm leading-6" aria-live="polite">
+      {!ready ? (
+        <InlineAlert tone="warning" role="status">
+          {error || "Opening secure device storage. If this session is open in another tab, close that tab to continue here."}
+        </InlineAlert>
+      ) : null}
+
+      {!online ? (
+        <InlineAlert tone="warning" role="status">
+          Offline · Saved answers will retry when you reconnect. For timed sessions, answers must reach the server before
+          the deadline. Explanations and uncached images need a connection.
+        </InlineAlert>
+      ) : null}
+
+      {expired ? (
+        <InlineAlert tone="brand" role="status">
+          Time is up. Reconnect to finish submission. Local changes received after the deadline cannot count towards your
+          score.
+        </InlineAlert>
+      ) : null}
+
+      {ready && error ? <InlineAlert tone="danger">{error}</InlineAlert> : null}
+
+      {code === "STORAGE" ? (
+        <Button type="button" variant="dark" size="lg" onClick={onStorageRetry}>
+          Retry device storage
+        </Button>
+      ) : null}
+
+      {conflicted ? (
+        <>
+          <InlineAlert tone="warning" role="status">
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              Another device saved a newer answer. Your local changes are preserved.
+              <Button type="button" variant="dark" size="sm" onClick={() => setConflictDismissed(false)}>
+                Choose what to keep
+              </Button>
+            </span>
+          </InlineAlert>
+
+          <Sheet
+            open={!conflictDismissed}
+            onClose={() => setConflictDismissed(true)}
+            title="Another device saved a newer answer"
+            description="Your changes on this device are preserved either way."
+            footer={
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="secondary" size="lg" onClick={() => setConflictDismissed(true)}>
+                  Decide later
+                </Button>
+                <Button type="button" variant="dark" size="lg" onClick={onConflict}>
+                  Keep this device&apos;s changes
+                </Button>
+              </div>
+            }
+          >
+            <p className="text-sm leading-6 text-slate-600">
+              This session was also open somewhere else, and that device saved an answer after yours.
+            </p>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Continuing will intentionally replace those server answers with the choices made on this device. Nothing
+              changes until you choose.
+            </p>
+          </Sheet>
+        </>
+      ) : null}
+
+      {code === "AUTH" ? (
+        <a
+          href="/login"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonClasses({ variant: "secondary", size: "lg" })}
+        >
+          Sign in in a new tab, then return here
+        </a>
+      ) : null}
+    </div>
+  );
 }
