@@ -320,8 +320,22 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
           </div>
         ) : currentState.selectedOptionKey && !feedback && initialSession.mode === "practice" ? (
           <div className="mt-5">
-            <InlineAlert tone="warning" role="status">
-              {sync.ready && saveState !== "saving" ? "Your answer is saved on this device. Feedback will appear after it syncs." : "Your answer has not yet been confirmed in device storage."}
+            {/*
+              Nothing has gone wrong here: the answer is safely stored and will
+              be marked. So this is informational, not a warning — an amber
+              triangle at the moment a student most needs reassurance teaches
+              them to distrust the app, and "device storage" is not a thing a
+              student has any way to reason about.
+
+              The header chip already reports the connection, so this says the
+              one thing the student is actually asking: did my answer count?
+            */}
+            <InlineAlert tone="brand" role="status">
+              {sync.ready && saveState !== "saving"
+                ? sync.online
+                  ? "Answer saved. Checking it now…"
+                  : "Answer saved. You will see whether it was correct once you are back online — it will not be lost."
+                : "Saving your answer…"}
             </InlineAlert>
           </div>
         ) : null}
