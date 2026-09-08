@@ -59,6 +59,20 @@ export async function getOnboardingCatalog(userId: string): Promise<{
     const available = code === "jamb"
       ? examSubjects.length >= 4 && examSubjects.some((subject) => subject.slug === "use-of-english")
       : examSubjects.length > 0;
+
+    /*
+     * An exam body that is active in the database but has no serveable subject
+     * is a deployment mistake, not a product decision — the active question
+     * provider cannot map it. It used to fail silently: the card simply greyed
+     * out, and the only way to notice was for someone to look at it. Saying so
+     * once, server-side, makes it findable in the deployment log instead.
+     */
+    if (!available && links?.some((link) => link.exam_body_id === exam.id)) {
+      console.warn(
+        `[onboarding] ${code} is active but no subject is serveable by QUESTION_PROVIDER=${process.env.QUESTION_PROVIDER?.trim() || "internal"}`,
+      );
+    }
+
     return [{
       id: exam.id, code, name: exam.name, shortName: exam.short_name,
       description: exam.description, available, subjects: examSubjects,
