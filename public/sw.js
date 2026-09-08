@@ -1,5 +1,5 @@
 /* Public application shell only. Never cache authenticated HTML, RSC or API responses. */
-const SHELL = 'mdg-shell-lwMu27WkfsnRqmqcf48Cx';
+const SHELL = 'mdg-shell-rQQABoOh0i7ndYWcDYT7b';
 const MEDIA = 'mdg-question-media-v1';
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
