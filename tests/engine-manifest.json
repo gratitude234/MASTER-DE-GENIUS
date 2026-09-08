@@ -60,5 +60,6 @@
   "app/api/billing/webhook/paystack/route.ts": "e17efa68e54e7144695cdd3df2c0d69962c6c1c0111b9c1e5583355bbe317134",
   "app/api/billing/verify/route.ts": "3a55f01a0a880ad3cbf6069edebb837abdbbe408a5b07f7e0e029d5167ddf86a",
   "lib/rate-limit.ts": "47df05b8b59c8beb934d67ee9ef602965de20c1436a5dc4761a70888ec3c42c5",
-  "supabase/migrations/20260908060000_m9_billing_and_entitlements.sql": "9d7b2dd41fa064f048f99d39e7ec516438c9e2762fb9025062bb5bea452d84ad"
+  "supabase/migrations/20260908060000_m9_billing_and_entitlements.sql": "9d7b2dd41fa064f048f99d39e7ec516438c9e2762fb9025062bb5bea452d84ad",
+  "supabase/migrations/20260908080000_m9a_webhook_claim_lease.sql": "304875c22e4b357b2d8f8dad81484aaaff1f9f85b68fdd4c30a15421b79101e7"
 }

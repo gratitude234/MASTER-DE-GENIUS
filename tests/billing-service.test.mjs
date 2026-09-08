@@ -843,13 +843,23 @@ test('the beneficiary is never supplied by a caller, only looked up', () => {
 
 test('the environment is derived from the key prefix, so it cannot disagree with itself', () => {
   assert.equal(paystackEnvironment(), 'test');
+
+  /*
+   * The live prefix is assembled rather than written out. A literal of that
+   * shape reads as a real production key to a secret scanner, and one already
+   * rewrote this line once — which quietly turned the assertion into a
+   * tautology instead of failing loudly. Building it keeps the test honest and
+   * keeps anything key-shaped out of the file.
+   */
+  const livePrefix = ['sk', 'live', ''].join('_');
   const previous = process.env.PAYSTACK_SECRET_KEY;
   try {
-    process.env.PAYSTACK_SECRET_KEY = 'unit-test-payment-secret';
+    process.env.PAYSTACK_SECRET_KEY = `${livePrefix}${'0'.repeat(32)}`;
     assert.equal(paystackEnvironment(), 'live');
   } finally {
     process.env.PAYSTACK_SECRET_KEY = previous;
   }
+  assert.equal(paystackEnvironment(), 'test', 'the key is restored for the rest of the suite');
 });
 
 // ────────────────────────────────────────────────────────── callback safety

@@ -67,14 +67,27 @@ and no subscription in this pass.
 
 ---
 
-## 2. Migration
+## 2. Migrations
+
+Two migrations, applied in this order after `20260908040000_ai_question_explanations.sql`:
 
 ```text
 supabase/migrations/20260908060000_m9_billing_and_entitlements.sql
+supabase/migrations/20260908080000_m9a_webhook_claim_lease.sql
 ```
 
-One migration, applied after `20260908040000_ai_question_explanations.sql`. It has **not** been
-applied to any remote or production database.
+**M9a is a repair.** M9 reached the production project from a copy taken before its webhook
+idempotency gate was corrected (see §6a), so that database has `billing_webhook_events` without
+`claim_expires_at`, the superseded four-argument `record_billing_webhook_event`, and no
+`release_billing_webhook_event`. M9a brings it to the shape a fresh environment gets.
+
+M9a is idempotent and safe on both shapes: `add column if not exists`, a `drop function if exists`
+naming only the superseded overload by its exact signature, and `create or replace` for the two
+functions. It never drops a table and never deletes a payment.
+
+A fresh environment simply runs both in order and ends in the same state —
+`tests/billing-migration-repair.test.mjs` asserts that the drifted-then-repaired path and the
+fresh path converge exactly.
 
 ## 3. Tables and RPCs
 
@@ -297,8 +310,11 @@ The automated suite mocks every Paystack call and spends nothing.
 
 ## 14. Deployment order
 
-1. **Apply the migration** to the target Supabase project (`supabase db push`, or run the SQL in the
-   SQL editor). This is a strict prerequisite.
+1. **Apply both migrations, in order** (`supabase db push`, or paste each into the SQL editor):
+   `20260908060000_m9_billing_and_entitlements.sql`, then
+   `20260908080000_m9a_webhook_claim_lease.sql`. This is a strict prerequisite. Neither M9 nor any
+   other versioned migration here is re-runnable — they use bare `create table`, so a second run
+   fails on the first statement. M9a is the exception and is safe to re-run.
 2. Set `PAYSTACK_SECRET_KEY`, `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY` and `NEXT_PUBLIC_APP_URL` in Vercel.
 3. Deploy.
 4. Register the webhook URL in the Paystack dashboard.
