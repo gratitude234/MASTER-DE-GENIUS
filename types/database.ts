@@ -958,6 +958,10 @@ export type Database = {
         Args: { p_user_id: string; p_feature: "question_explanation"; p_limit: number };
         Returns: { allowed: boolean; remaining: number }[];
       };
+      refund_ai_daily_quota: {
+        Args: { p_user_id: string; p_feature: "question_explanation" };
+        Returns: number;
+      };
       open_billing_checkout: {
         Args: {
           p_user_id: string;

@@ -49,7 +49,12 @@ if (!process.argv.includes('--confirm-spend')) {
     }]);
     console.log('No prompt, response text, answer value, API key, or student data was printed.');
   } catch (error) {
+    // The category alone ("provider") does not distinguish a rejected key from
+    // an unknown model from a malformed request, and those need different
+    // fixes. `detail` carries the status and a bounded, key-redacted provider
+    // message — the whole reason this probe exists is to surface it.
     console.error('Gemini probe failed safely:', error?.category || 'unknown');
+    if (error?.detail) console.error('  reason:', error.detail);
     process.exitCode = 1;
   }
 }

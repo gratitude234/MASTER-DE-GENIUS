@@ -174,6 +174,25 @@ async function loadVerifiedContext(userId: string, request: ExplanationRequest):
   };
 }
 
+/**
+ * Hands back the daily allowance when the provider produced nothing.
+ *
+ * The quota is reserved before generation so two concurrent requests cannot
+ * both spend the last one. That reservation has to be reversible, or a provider
+ * outage silently costs a student explanations they never received.
+ */
+async function refundDailyQuota(userId: string): Promise<void> {
+  try {
+    const { error } = await createAdminClient().rpc("refund_ai_daily_quota", {
+      p_user_id: userId,
+      p_feature: "question_explanation",
+    });
+    if (error) console.error("[ai] quota refund failed", { code: error.code });
+  } catch {
+    console.error("[ai] quota refund failed");
+  }
+}
+
 async function releaseClaim(cacheKey: string): Promise<void> {
   try {
     const { error } = await createAdminClient().rpc("release_ai_explanation_claim", { p_cache_key: cacheKey });
@@ -318,7 +337,24 @@ export async function explainQuestionForUser(userId: string, request: Explanatio
     return { explanation, cached: false, remainingToday: quota.remaining };
   } catch (error) {
     await releaseClaim(cacheKey);
+    // Nothing was produced, so the reserved generation goes back.
+    await refundDailyQuota(userId);
     const category = error instanceof GeminiExplanationError ? error.category : "internal";
+
+    /*
+     * This used to be recorded only in `ai_usage`, which meant a generation
+     * outage showed up in the deployment log as nothing at all — the student
+     * saw "couldn't generate an explanation" and the operator saw a 503 with no
+     * reason. The category and its sanitized detail belong in the log too.
+     *
+     * `detail` carries a status and a bounded, key-redacted provider message.
+     * It never contains the prompt, the question, the answer or a credential.
+     */
+    console.error(
+      `[ai] generation failed: category=${category}` +
+      (error instanceof GeminiExplanationError && error.detail ? ` ${error.detail}` : ""),
+    );
+
     await recordAiUsage({
       userId,
       explanationType: request.explanationType,

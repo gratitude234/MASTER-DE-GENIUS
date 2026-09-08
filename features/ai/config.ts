@@ -10,7 +10,7 @@ export const AI_PROVIDER = "gemini";
 export const AI_CACHE_TTL_SECONDS = 48 * 60 * 60;
 
 export function geminiModel(): string {
-  return process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
+  return process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash-lite";
 }
 
 export function geminiApiKey(): string {

@@ -29,10 +29,44 @@ const EXPLANATION_SCHEMA = {
 } as const;
 
 export class GeminiExplanationError extends Error {
-  constructor(readonly category: "not_configured" | "timeout" | "provider" | "invalid_response") {
+  constructor(
+    readonly category: "not_configured" | "timeout" | "provider" | "invalid_response",
+    /**
+     * A short, sanitized reason for the server log.
+     *
+     * Without this the category alone reaches the operator — "provider" says
+     * nothing about whether the model name is wrong, the key is rejected or the
+     * quota is spent, and the three need completely different fixes.
+     */
+    readonly detail?: string,
+  ) {
     super(`Gemini explanation failed: ${category}`);
     this.name = "GeminiExplanationError";
   }
+}
+
+/**
+ * Reduces a provider failure to something safe to log.
+ *
+ * Provider errors name the model and the reason, which is exactly what an
+ * operator needs — but the same object can carry the request that produced it.
+ * Only the status and a bounded, key-redacted message survive, so a question,
+ * an answer key or a credential can never reach a log line.
+ */
+function describeProviderError(error: unknown): string {
+  if (!(error instanceof Error)) return "unknown";
+
+  const record = error as unknown as Record<string, unknown>;
+  const status = record.status ?? record.statusCode ?? record.code;
+  const message = String(error.message ?? "")
+    // Anything long and token-shaped is treated as a credential.
+    .replace(/AIza[0-9A-Za-z_-]{10,}/g, "[redacted-key]")
+    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, "[redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+
+  return [error.name, status == null ? null : `status=${status}`, message].filter(Boolean).join(" ");
 }
 
 function cleanText(value: unknown, maximum: number): string | null {
@@ -103,7 +137,12 @@ export async function generateGeminiExplanation(prompt: string): Promise<GeminiG
     };
   } catch (error) {
     if (error instanceof GeminiExplanationError) throw error;
-    if (error instanceof Error && /timeout|abort/i.test(error.message)) throw new GeminiExplanationError("timeout");
-    throw new GeminiExplanationError("provider");
+    const detail = describeProviderError(error);
+    if (error instanceof Error && /timeout|abort/i.test(error.message)) {
+      throw new GeminiExplanationError("timeout", detail);
+    }
+    // The model name is the single most common cause of a fast rejection, and
+    // it is configuration rather than content, so it is safe to name.
+    throw new GeminiExplanationError("provider", `model=${model} ${detail}`.slice(0, 240));
   }
 }

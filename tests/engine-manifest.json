@@ -12,11 +12,11 @@
   "features/practice/api.ts": "d471719cf2f38d315213a0a8920e5733827f5b5b375d9cd31353e3854d68a91b",
   "features/practice/validation.ts": "03ebab94aa3c339e179ee26d9a5e7ea140acde7f6e692cdb569125eaad13bce9",
   "features/practice/types.ts": "fac37c9a9e847cc70a89d44a0e994bb810b438d290f3058cfe9e9ace6afa6c87",
-  "features/ai/config.ts": "28f499a77b7af95dbffe68d5e9331f4576a77a71331361007fc0a0214a8d7ad9",
+  "features/ai/config.ts": "36b6c2e3579f3a4d891824d1dda74e753abbf863e0322f6e7d5e69f85b2c0b81",
   "features/ai/policy.ts": "bd9ddc4669b9be2077eca139f2a15eb3c7aa03d56a162233280414acb171026a",
   "features/ai/prompts/question-explanation.ts": "b16fb21b4ab5068a79ce771c5989a61a706c45cdd4c8e7d61892edc3d94510be",
-  "features/ai/providers/gemini.ts": "a1f35ec5a51ca0d76c9ca4898aff9dea0645bce4632c28f16a95f4f4be147561",
-  "features/ai/service.ts": "ff436eaf9547c2204aeab8c780fcabd02ee3ba0813ca81a42956461f41adee23",
+  "features/ai/providers/gemini.ts": "5687ee1f38c696cddd22b890c0f5e981e877e9fcfe0f48a0edb11a25603cdd75",
+  "features/ai/service.ts": "8e42391203550a62a5769bf608b77ac48dd37511f16e67a7aa0625dac225be19",
   "features/ai/types.ts": "966f7418a147728222e010902600cfad6e6c34c233fffa5d3f28db8a3e4b7dc9",
   "features/ai/usage.ts": "1fe8d7c324f2541b030c3fa30b253dc2f9ecb9e8d951b77209d430ce6d3304f0",
   "features/results/grading.ts": "0d6e63f77c236abdb280c22715d13fab217c4a2c51111046cef42a1cc66d0ad6",
@@ -61,5 +61,6 @@
   "app/api/billing/verify/route.ts": "3a55f01a0a880ad3cbf6069edebb837abdbbe408a5b07f7e0e029d5167ddf86a",
   "lib/rate-limit.ts": "47df05b8b59c8beb934d67ee9ef602965de20c1436a5dc4761a70888ec3c42c5",
   "supabase/migrations/20260908060000_m9_billing_and_entitlements.sql": "9d7b2dd41fa064f048f99d39e7ec516438c9e2762fb9025062bb5bea452d84ad",
-  "supabase/migrations/20260908080000_m9a_webhook_claim_lease.sql": "304875c22e4b357b2d8f8dad81484aaaff1f9f85b68fdd4c30a15421b79101e7"
+  "supabase/migrations/20260908080000_m9a_webhook_claim_lease.sql": "304875c22e4b357b2d8f8dad81484aaaff1f9f85b68fdd4c30a15421b79101e7",
+  "supabase/migrations/20260908090000_m9b_ai_quota_refund.sql": "a77ea37a8b63410f621adef6020d2c6b6b00e5782cc67611a7c341c4e6b044fe"
 }
