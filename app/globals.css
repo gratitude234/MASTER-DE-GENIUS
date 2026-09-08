@@ -105,9 +105,27 @@ a {
   }
 }
 
+/*
+ * Opacity only — deliberately no transform.
+ *
+ * This used to animate `translateY(6px)` with `animation-fill-mode: both`, which
+ * leaves `transform: matrix(1,0,0,1,0,0)` on the element for as long as it
+ * lives. Any transform other than `none` makes that element the containing
+ * block for `position: fixed` descendants, so every page-level bar stopped
+ * being measured from the viewport and started being measured from the end of
+ * the page content.
+ *
+ * The practice runner's "Next question" bar and the CBT runner's submit bar
+ * both sat hundreds of pixels above the tab bar on a phone, over a band of dead
+ * space, clipping the last option of the question behind them.
+ *
+ * A 6px rise is not worth breaking every fixed element on the screen. If the
+ * motion is ever wanted back, it has to go on an inner wrapper that contains no
+ * fixed positioning — never on the page container itself.
+ */
 @keyframes screen-enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /*
