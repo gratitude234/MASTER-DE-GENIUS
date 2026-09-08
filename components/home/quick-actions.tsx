@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { BrainCircuit, ClipboardCheck, FileQuestion, RotateCcw } from "lucide-react";
 
-const actions = [
+const sharedActions = [
   { href: "/practice?quick=1", label: "Quick Practice", helper: "Targets your weakest area", icon: BrainCircuit },
-  { href: "/mock", label: "Full Mock", helper: "JAMB conditions", icon: ClipboardCheck },
   { href: "/practice?mode=past", label: "Past Questions", helper: "Browse by year", icon: FileQuestion },
   { href: "/progress/mistakes", label: "Mistakes", helper: "Review weak spots", icon: RotateCcw },
 ] as const;
@@ -13,7 +12,11 @@ const actions = [
  * approved layout, and the reason the desktop canvas no longer reads as empty
  * space around a phone-width strip.
  */
-export function QuickActions() {
+export function QuickActions({ examCode }: { examCode: string | null }) {
+  const examAction = examCode === "waec"
+    ? { href: "/practice?timed=1", label: "Timed Subject", helper: "Exam-style session", icon: ClipboardCheck }
+    : { href: "/mock", label: "Full Mock", helper: "JAMB conditions", icon: ClipboardCheck };
+  const actions = [sharedActions[0], examAction, ...sharedActions.slice(1)];
   return (
     <section aria-label="Quick actions" className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
       {actions.map(({ href, label, helper, icon: Icon }) => (

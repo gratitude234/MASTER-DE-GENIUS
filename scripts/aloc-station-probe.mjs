@@ -28,9 +28,9 @@ if (!process.argv.includes(CONFIRMATION)) {
       body: { subject: 'mathematics', examType: 'waec', preset: 'waec_standard_50', shuffleOptions: true, seed: `master-probe-waec-${Date.now()}` },
     },
     {
-      name: 'NECO L1 random 10',
-      method: 'GET',
-      path: '/questions?subject=mathematics&examType=neco&random=true&limit=10',
+      name: 'NECO government L1 random 10',
+     method: 'GET',
+      path: '/questions?subject=government&examType=neco&random=true&limit=10',
     },
   ];
 

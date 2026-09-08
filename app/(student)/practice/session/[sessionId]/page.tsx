@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { PracticeSessionRunner } from "@/components/practice/practice-session-runner";
 import { loadPracticeSessionForUser } from "@/features/practice/service";
 import { requireOnboardedUser } from "@/lib/auth";
+import { aiExplanationsEnabled } from "@/features/ai/config";
 
 interface PracticeSessionPageProps {
   params: Promise<{ sessionId: string }>;
@@ -16,5 +17,5 @@ export default async function PracticeSessionPage({ params }: PracticeSessionPag
   if (!session) notFound();
 
   if (session.status === "completed") redirect(`/progress/results/practice/${sessionId}`);
-  return <PracticeSessionRunner initialSession={session} />;
+  return <PracticeSessionRunner initialSession={session} aiExplanationsEnabled={aiExplanationsEnabled()} />;
 }

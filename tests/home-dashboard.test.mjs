@@ -49,7 +49,7 @@ globalThis.__profile = {
   user: { id: 'user-1', email: 'ada@example.com' },
   profile: { full_name: 'Ada Nwosu' },
   preference: { exam_body_id: EXAM_BODY, exam_year: 2027 },
-  examBody: { short_name: 'JAMB', name: 'JAMB' },
+  examBody: { code: 'jamb', short_name: 'JAMB', name: 'JAMB' },
 };
 
 /** One graded question, shaped the way `mistakeBank` and `breakdown` read it. */
@@ -155,6 +155,21 @@ test('cold-start Home shows no zeroed analytics dressed up as progress', async (
   assert.ok(!markup.includes('Weak areas'));
   assert.ok(!markup.includes('ready for review'), 'no 0-mistake counter');
   assert.ok(!markup.includes('Continue where you need it most'), 'nothing is claimed to be weak');
+});
+
+test('WAEC Home offers timed subject practice instead of a JAMB full mock', async () => {
+  const original = globalThis.__profile;
+  globalThis.__profile = {
+    ...original,
+    examBody: { code: 'waec', short_name: 'WAEC', name: 'WAEC' },
+    preference: { ...original.preference, exam_year: 2027 },
+  };
+  setState();
+  const markup = await renderHome();
+  assert.ok(markup.includes('Timed Subject'));
+  assert.ok(markup.includes('href="/practice?timed=1"'));
+  assert.ok(!markup.includes('JAMB conditions'));
+  globalThis.__profile = original;
 });
 
 test('Home never renders a readiness score or a days-to-exam countdown', async () => {

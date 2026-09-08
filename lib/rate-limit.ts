@@ -61,6 +61,32 @@ export const RATE_LIMITS = {
     capacity: positiveNumber(process.env.RATE_LIMIT_REVISION_BURST, 10),
     perHour: positiveNumber(process.env.RATE_LIMIT_REVISION_PER_HOUR, 40),
   },
+  /** Small burst protection for paid AI generation; daily quota is separate. */
+  aiExplanation: {
+    name: "ai_question_explanation",
+    capacity: positiveNumber(process.env.RATE_LIMIT_AI_EXPLANATION_BURST, 2),
+    perHour: positiveNumber(process.env.RATE_LIMIT_AI_EXPLANATION_PER_HOUR, 120),
+  },
+  /**
+   * Opening a checkout costs an upstream Paystack call. The burst is small
+   * because a student rarely means to start more than one payment at a time,
+   * and duplicate initialization is already collapsed in the database — this
+   * only bounds a script.
+   */
+  billingCheckout: {
+    name: "billing_checkout",
+    capacity: positiveNumber(process.env.RATE_LIMIT_BILLING_CHECKOUT_BURST, 5),
+    perHour: positiveNumber(process.env.RATE_LIMIT_BILLING_CHECKOUT_PER_HOUR, 20),
+  },
+  /**
+   * The callback page polls this while a payment settles, so it is generous:
+   * a student watching a genuine payment must never be told to wait.
+   */
+  billingVerify: {
+    name: "billing_verify",
+    capacity: positiveNumber(process.env.RATE_LIMIT_BILLING_VERIFY_BURST, 12),
+    perHour: positiveNumber(process.env.RATE_LIMIT_BILLING_VERIFY_PER_HOUR, 120),
+  },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export interface RateLimitResult {

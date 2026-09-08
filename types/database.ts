@@ -21,6 +21,194 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["session_creation_claims"]["Insert"]>;
         Relationships: [];
       };
+      billing_plans: {
+        Row: {
+          slug: string;
+          name: string;
+          tier: "free" | "master";
+          price_kobo: number;
+          currency: string;
+          duration_days: number | null;
+          is_active: boolean;
+          is_popular: boolean;
+          display_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          slug: string;
+          name: string;
+          tier: "free" | "master";
+          price_kobo: number;
+          currency?: string;
+          duration_days?: number | null;
+          is_active?: boolean;
+          is_popular?: boolean;
+          display_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["billing_plans"]["Insert"]>;
+        Relationships: [];
+      };
+      payment_transactions: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan_slug: string;
+          reference: string;
+          provider: string;
+          environment: "test" | "live";
+          amount_kobo: number;
+          currency: string;
+          access_days: number;
+          status: "pending" | "success" | "failed" | "abandoned" | "reversed";
+          authorization_url: string | null;
+          provider_transaction_id: string | null;
+          provider_status: string | null;
+          failure_reason: string | null;
+          paid_at: string | null;
+          applied_at: string | null;
+          entitlement_expires_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          plan_slug: string;
+          reference: string;
+          provider?: string;
+          environment: "test" | "live";
+          amount_kobo: number;
+          currency: string;
+          access_days: number;
+          status: "pending" | "success" | "failed" | "abandoned" | "reversed";
+          authorization_url?: string | null;
+          provider_transaction_id?: string | null;
+          provider_status?: string | null;
+          failure_reason?: string | null;
+          paid_at?: string | null;
+          applied_at?: string | null;
+          entitlement_expires_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["payment_transactions"]["Insert"]>;
+        Relationships: [];
+      };
+      user_entitlements: {
+        Row: {
+          user_id: string;
+          tier: "free" | "master";
+          plan_slug: string | null;
+          expires_at: string | null;
+          activated_at: string | null;
+          last_payment_id: string | null;
+          total_paid_kobo: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          tier?: "free" | "master";
+          plan_slug?: string | null;
+          expires_at?: string | null;
+          activated_at?: string | null;
+          last_payment_id?: string | null;
+          total_paid_kobo?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["user_entitlements"]["Insert"]>;
+        Relationships: [];
+      };
+      entitlement_events: {
+        Row: {
+          id: number;
+          user_id: string;
+          payment_id: string | null;
+          event_type: "granted" | "extended";
+          plan_slug: string | null;
+          previous_tier: string | null;
+          previous_expires_at: string | null;
+          new_tier: string | null;
+          new_expires_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: string;
+          payment_id?: string | null;
+          event_type: "granted" | "extended";
+          plan_slug?: string | null;
+          previous_tier?: string | null;
+          previous_expires_at?: string | null;
+          new_tier?: string | null;
+          new_expires_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["entitlement_events"]["Insert"]>;
+        Relationships: [];
+      };
+      billing_webhook_events: {
+        Row: {
+          id: number;
+          provider: string;
+          event_id: string;
+          event_type: string;
+          reference: string | null;
+          outcome: "received" | "applied" | "ignored" | "rejected" | "duplicate";
+          detail: string | null;
+          claim_expires_at: string;
+          received_at: string;
+          processed_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          provider?: string;
+          event_id: string;
+          event_type: string;
+          reference?: string | null;
+          outcome: "received" | "applied" | "ignored" | "rejected" | "duplicate";
+          detail?: string | null;
+          claim_expires_at?: string;
+          received_at?: string;
+          processed_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["billing_webhook_events"]["Insert"]>;
+        Relationships: [];
+      };
+      product_usage_windows: {
+        Row: { user_id: string; capability: string; window_key: string; updated_at: string };
+        Insert: { user_id: string; capability: string; window_key: string; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["product_usage_windows"]["Insert"]>;
+        Relationships: [];
+      };
+      product_usage_reservations: {
+        Row: {
+          id: string;
+          user_id: string;
+          capability: string;
+          window_key: string;
+          state: "reserved" | "committed";
+          lease_expires_at: string | null;
+          committed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          capability: string;
+          window_key: string;
+          state: "reserved" | "committed";
+          lease_expires_at?: string | null;
+          committed_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["product_usage_reservations"]["Insert"]>;
+        Relationships: [];
+      };
       external_api_usage: {
         Row: {
           id: number;
@@ -57,6 +245,82 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["external_api_usage"]["Insert"]>;
+        Relationships: [];
+      };
+      ai_explanation_cache: {
+        Row: {
+          cache_key: string;
+          question_fingerprint: string;
+          explanation_type: "explain_better" | "why_wrong";
+          selected_option_key: string | null;
+          prompt_version: string;
+          provider: string;
+          model: string;
+          status: "pending" | "completed";
+          content: Json | null;
+          lease_expires_at: string;
+          expires_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          cache_key: string;
+          question_fingerprint: string;
+          explanation_type: "explain_better" | "why_wrong";
+          selected_option_key?: string | null;
+          prompt_version: string;
+          provider: string;
+          model: string;
+          status?: "pending" | "completed";
+          content?: Json | null;
+          lease_expires_at: string;
+          expires_at: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["ai_explanation_cache"]["Insert"]>;
+        Relationships: [];
+      };
+      ai_daily_usage: {
+        Row: { user_id: string; usage_date: string; feature: "question_explanation"; generation_count: number; updated_at: string };
+        Insert: { user_id: string; usage_date?: string; feature: "question_explanation"; generation_count?: number; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["ai_daily_usage"]["Insert"]>;
+        Relationships: [];
+      };
+      ai_usage: {
+        Row: {
+          id: number;
+          user_id: string;
+          feature: "question_explanation";
+          explanation_type: "explain_better" | "why_wrong";
+          provider: string;
+          model: string;
+          input_tokens: number | null;
+          output_tokens: number | null;
+          cache_hit: boolean;
+          duration_ms: number;
+          status: "ok" | "failed";
+          error_category: string | null;
+          prompt_version: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: string;
+          feature: "question_explanation";
+          explanation_type: "explain_better" | "why_wrong";
+          provider: string;
+          model: string;
+          input_tokens?: number | null;
+          output_tokens?: number | null;
+          cache_hit?: boolean;
+          duration_ms: number;
+          status: "ok" | "failed";
+          error_category?: string | null;
+          prompt_version: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["ai_usage"]["Insert"]>;
         Relationships: [];
       };
       profiles: {
@@ -668,6 +932,128 @@ export type Database = {
         Args: { p_key: string; p_capacity: number; p_refill_per_second: number; p_cost?: number };
         Returns: { allowed: boolean; remaining: number; retry_after_seconds: number }[];
       };
+      claim_ai_explanation: {
+        Args: {
+          p_cache_key: string;
+          p_question_fingerprint: string;
+          p_explanation_type: "explain_better" | "why_wrong";
+          p_selected_option_key: string | null;
+          p_prompt_version: string;
+          p_provider: string;
+          p_model: string;
+          p_lease_seconds?: number;
+          p_ttl_seconds?: number;
+        };
+        Returns: { outcome: "claimed" | "completed" | "in_progress"; content: Json | null }[];
+      };
+      settle_ai_explanation: {
+        Args: { p_cache_key: string; p_content: Json; p_ttl_seconds?: number };
+        Returns: undefined;
+      };
+      release_ai_explanation_claim: {
+        Args: { p_cache_key: string };
+        Returns: undefined;
+      };
+      consume_ai_daily_quota: {
+        Args: { p_user_id: string; p_feature: "question_explanation"; p_limit: number };
+        Returns: { allowed: boolean; remaining: number }[];
+      };
+      open_billing_checkout: {
+        Args: {
+          p_user_id: string;
+          p_plan_slug: string;
+          p_reference: string;
+          p_environment: "test" | "live";
+          p_reuse_seconds?: number;
+        };
+        Returns: {
+          outcome: "created" | "reused";
+          payment_id: string;
+          reference: string;
+          amount_kobo: number;
+          currency: string;
+          access_days: number;
+          authorization_url: string | null;
+        }[];
+      };
+      attach_billing_authorization_url: {
+        Args: { p_reference: string; p_authorization_url: string };
+        Returns: undefined;
+      };
+      apply_successful_payment: {
+        Args: {
+          p_reference: string;
+          p_amount_kobo: number;
+          p_currency: string;
+          p_environment: "test" | "live";
+          p_provider_transaction_id?: string | null;
+          p_provider_status?: string | null;
+          p_paid_at?: string | null;
+        };
+        Returns: {
+          outcome: string;
+          user_id: string | null;
+          plan_slug: string | null;
+          tier: string | null;
+          expires_at: string | null;
+          access_days: number | null;
+        }[];
+      };
+      mark_billing_payment_unsuccessful: {
+        Args: {
+          p_reference: string;
+          p_status: "failed" | "abandoned" | "reversed";
+          p_reason?: string | null;
+          p_provider_transaction_id?: string | null;
+          p_provider_status?: string | null;
+        };
+        Returns: { outcome: string; user_id: string | null }[];
+      };
+      current_billing_entitlement: {
+        Args: { p_user_id: string };
+        Returns: {
+          tier: "free" | "master";
+          plan_slug: string | null;
+          expires_at: string | null;
+          is_master: boolean;
+        }[];
+      };
+      reserve_product_quota: {
+        Args: {
+          p_user_id: string;
+          p_capability: "practice_session" | "mock_attempt";
+          p_window_key: string;
+          p_limit: number;
+          p_lease_seconds?: number;
+        };
+        Returns: { allowed: boolean; used: number; remaining: number; reservation_id: string | null }[];
+      };
+      commit_product_quota: {
+        Args: { p_reservation_id: string };
+        Returns: boolean;
+      };
+      release_product_quota: {
+        Args: { p_reservation_id: string };
+        Returns: boolean;
+      };
+      record_billing_webhook_event: {
+        Args: {
+          p_provider: string;
+          p_event_id: string;
+          p_event_type: string;
+          p_reference?: string | null;
+          p_lease_seconds?: number;
+        };
+        Returns: { is_new: boolean; event_row_id: number | null }[];
+      };
+      finish_billing_webhook_event: {
+        Args: { p_event_row_id: number; p_outcome: string; p_detail?: string | null };
+        Returns: undefined;
+      };
+      release_billing_webhook_event: {
+        Args: { p_event_row_id: number; p_detail?: string | null };
+        Returns: undefined;
+      };
       claim_session_creation: {
         Args: {
           p_user_id: string;
@@ -780,6 +1166,17 @@ export type Database = {
       };
       complete_jamb_onboarding: {
         Args: {
+          p_exam_year: number;
+          p_target_score: number;
+          p_intended_course: string;
+          p_study_intensity: Database["public"]["Enums"]["study_intensity"];
+          p_subject_ids: string[];
+        };
+        Returns: string;
+      };
+      complete_exam_onboarding: {
+        Args: {
+          p_exam_code: string;
           p_exam_year: number;
           p_target_score: number;
           p_intended_course: string;

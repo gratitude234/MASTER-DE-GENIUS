@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CalendarRange, Clock3, Layers3, Lock, Sparkles } from "lucide-react";
 
+import { UpgradePrompt } from "@/components/billing/upgrade-prompt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { Select } from "@/components/ui/select";
 import { navClearance, typography } from "@/components/ui/variants";
+import { asPlanLimitNotice, type PlanLimitNotice } from "@/features/billing/limit-notice";
 import type { PracticeRecommendation } from "@/features/home/recommendation";
 import { TIMED_SECONDS_PER_QUESTION } from "@/features/practice/types";
 import type { PracticeCatalogSubject } from "@/features/questions/types";
@@ -37,6 +39,8 @@ interface PracticeSetupProps {
   recommendation: PracticeRecommendation;
   /** True for `?quick=1`: apply the recommendation on arrival, but never start. */
   prefillFromRecommendation: boolean;
+  /** Used by the WAEC timed-subject entry point; never starts automatically. */
+  initialMode?: PracticeMode;
   resumeSession?: {
     id: string;
     subjectName: string;
@@ -86,6 +90,7 @@ export function PracticeSetup({
   unavailableSubjects,
   recommendation,
   prefillFromRecommendation,
+  initialMode = "practice",
   resumeSession,
 }: PracticeSetupProps) {
   const router = useRouter();
@@ -126,11 +131,12 @@ export function PracticeSetup({
     () => (prefillFromRecommendation ? prefill?.topicSlug : undefined) ?? "all",
   );
   const [questionCount, setQuestionCount] = useState<number>(DEFAULT_COUNT);
-  const [mode, setMode] = useState<PracticeMode>("practice");
+  const [mode, setMode] = useState<PracticeMode>(initialMode);
   const [difficulty, setDifficulty] = useState<QuestionDifficulty | "mixed">("mixed");
   const [year, setYear] = useState("all");
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [planLimit, setPlanLimit] = useState<PlanLimitNotice | null>(null);
 
   const isPast = tab === "past";
 
@@ -152,6 +158,7 @@ export function PracticeSetup({
     if (!activeSubject || starting) return;
     setStarting(true);
     setStartError(null);
+    setPlanLimit(null);
 
     try {
       const response = await fetch("/api/practice/sessions", {
@@ -169,6 +176,17 @@ export function PracticeSetup({
       });
       const payload = (await response.json()) as { sessionId?: string; questionCount?: number; requestedCount?: number; error?: string };
       if (!response.ok || !payload.sessionId) {
+        /*
+         * Reaching the daily allowance is not an error the student caused. It
+         * gets the upgrade panel — what ran out, when it resets, what Master
+         * changes — rather than a red failure band.
+         */
+        const notice = asPlanLimitNotice(payload);
+        if (notice) {
+          setPlanLimit(notice);
+          setStarting(false);
+          return;
+        }
         throw new Error(payload.error || "Could not start practice.");
       }
       router.push(`/practice/session/${payload.sessionId}`);
@@ -431,6 +449,7 @@ export function PracticeSetup({
           navClearance.bottom,
         )}
       >
+        {planLimit ? <div className="mb-3"><UpgradePrompt notice={planLimit} /></div> : null}
         {startError ? <div className="mb-3"><InlineAlert tone="danger">{startError}</InlineAlert></div> : null}
         <Button
           type="button"

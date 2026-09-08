@@ -1,15 +1,11 @@
-import { redirect } from "next/navigation";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { OnboardingFlow } from "@/components/onboarding/onboarding-flow";
 import { requireUser } from "@/lib/auth";
-import { getJambOnboardingCatalog } from "@/features/onboarding/queries";
+import { getOnboardingCatalog } from "@/features/onboarding/queries";
 
 export default async function OnboardingPage() {
-  const { supabase, user } = await requireUser();
-  const { data: profile } = await supabase.from("profiles").select("onboarding_completed").eq("id", user.id).maybeSingle();
-  if (profile?.onboarding_completed) redirect("/home");
-
-  const { subjects } = await getJambOnboardingCatalog();
+  const { user } = await requireUser();
+  const { exams, selection } = await getOnboardingCatalog(user.id);
 
   return (
     // Onboarding is a focused task, not a workspace: the same centred 520px
@@ -17,7 +13,7 @@ export default async function OnboardingPage() {
     <main className="grid min-h-dvh place-items-center bg-slate-50 px-6 py-8">
       <div className="screen-enter w-full max-w-[520px]">
         <div className="mb-7 flex justify-center"><BrandMark /></div>
-        <OnboardingFlow subjects={subjects} />
+        <OnboardingFlow exams={exams} initialSelection={selection} />
       </div>
     </main>
   );

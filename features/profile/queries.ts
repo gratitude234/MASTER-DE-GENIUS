@@ -13,12 +13,12 @@ export async function getStudentProfile() {
     .eq("is_primary", true)
     .maybeSingle();
 
-  let examBody: { short_name: string; name: string } | null = null;
+  let examBody: { code: string; short_name: string; name: string } | null = null;
   let subjects: { id: string; name: string; slug: string }[] = [];
 
   if (preference) {
     const [{ data: exam }, { data: subjectLinks }] = await Promise.all([
-      supabase.from("exam_bodies").select("short_name, name").eq("id", preference.exam_body_id).maybeSingle(),
+      supabase.from("exam_bodies").select("code, short_name, name").eq("id", preference.exam_body_id).maybeSingle(),
       supabase.from("student_subject_preferences").select("subject_id, display_order").eq("preference_id", preference.id).order("display_order"),
     ]);
     examBody = exam;

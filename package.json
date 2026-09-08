@@ -12,9 +12,12 @@
     "postbuild": "node scripts/version-worker.mjs",
     "test:browser": "node tests/offline-browser.mjs",
     "aloc:smoke": "node --experimental-transform-types scripts/aloc-smoke.mjs",
-    "aloc-station:probe": "node --env-file=.env.local scripts/aloc-station-probe.mjs"
+    "aloc-station:probe": "node --env-file=.env.local scripts/aloc-station-probe.mjs",
+    "aloc-station:catalog": "node --env-file=.env.local scripts/aloc-station-catalog.mjs",
+    "gemini:probe": "node --env-file=.env.local --experimental-transform-types scripts/gemini-explanation-probe.mjs"
   },
   "dependencies": {
+    "@google/genai": "2.21.0",
     "@supabase/ssr": "0.12.6",
     "@supabase/supabase-js": "2.115.0",
     "clsx": "^2.1.1",

@@ -10,6 +10,7 @@ import {
   GraduationCap,
   Home,
   ListChecks,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/brand-mark";
@@ -45,6 +46,7 @@ const desktopGroups = [
     label: "PERSONAL",
     items: [
       { href: "/me", label: "Profile", icon: UserRound },
+      { href: "/billing", label: "Plan & Billing", icon: Sparkles },
     ],
   },
 ] as const;
@@ -90,12 +92,21 @@ export interface ExamLabel {
   year: number;
 }
 
-const desktopHrefs = desktopGroups.flatMap((group) => group.items.map((item) => item.href));
-const mobileHrefs = mobileItems.map((item) => item.href);
-
 export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }) {
   const pathname = usePathname();
   const params = useSearchParams();
+  const isWaec = examLabel?.shortName.toLowerCase() === "waec";
+  const resolvedDesktopGroups = desktopGroups.map((group) => ({
+    ...group,
+    items: group.items.map((item) => item.href === "/mock" && isWaec
+      ? { ...item, href: "/practice?timed=1", label: "Timed Subject" }
+      : item),
+  }));
+  const resolvedMobileItems = mobileItems.map((item) => item.href === "/mock" && isWaec
+    ? { ...item, href: "/practice?timed=1", label: "Timed" }
+    : item);
+  const desktopHrefs = resolvedDesktopGroups.flatMap((group) => group.items.map((item) => item.href));
+  const mobileHrefs = resolvedMobileItems.map((item) => item.href);
   const desktopActive = activeHref(pathname, params, desktopHrefs);
   const mobileActive = activeHref(pathname, params, mobileHrefs);
 
@@ -110,7 +121,7 @@ export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[250px] flex-col bg-slate-950 px-4 pb-6 pt-6 text-white lg:flex">
         <BrandMark inverse sublabel={false} className="px-2 pb-7" />
         <nav className="flex-1 overflow-y-auto" aria-label="Student navigation">
-          {desktopGroups.map((group) => (
+          {resolvedDesktopGroups.map((group) => (
             <div className="mb-5" key={group.label}>
               <div className="mb-2 px-2.5 text-[10px] font-bold tracking-[0.16em] text-white/35">{group.label}</div>
               <div className="space-y-0.5">
@@ -155,7 +166,7 @@ export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }
         className="safe-area-bottom fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/[0.97] backdrop-blur-lg lg:hidden"
       >
         <div className="grid h-nav-height grid-cols-5">
-          {mobileItems.map(({ href, label, icon: Icon }) => {
+          {resolvedMobileItems.map(({ href, label, icon: Icon }) => {
             const active = href === mobileActive;
             return (
               <Link

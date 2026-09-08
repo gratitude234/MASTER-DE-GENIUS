@@ -27,10 +27,12 @@ import { InlineAlert } from "@/components/ui/inline-alert";
 import { Sheet } from "@/components/ui/sheet";
 import { buttonClasses, navClearance, typography } from "@/components/ui/variants";
 import { cn } from "@/lib/utils";
+import { AiQuestionExplanation } from "@/components/ai/question-explanation";
 
 interface PracticeSessionRunnerProps {
   recovered?: boolean;
   initialSession: PracticeSessionView;
+  aiExplanationsEnabled?: boolean;
 }
 
 /** The one low-time threshold this screen already had. No new exam policy. */
@@ -71,7 +73,7 @@ function useTimerAnnouncement(secondsLeft: number | null | undefined) {
   return announcement;
 }
 
-export function PracticeSessionRunner({ initialSession, recovered = false }: PracticeSessionRunnerProps) {
+export function PracticeSessionRunner({ initialSession, recovered = false, aiExplanationsEnabled = false }: PracticeSessionRunnerProps) {
   const sync = useOfflineSession("practice", initialSession, recovered);
   const { answers, state: saveState, secondsLeft, finishing: completing } = sync;
   const completion = sync.receipt as unknown as CompletePracticeSessionResult | null;
@@ -180,6 +182,14 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
           ) : null}
         </div>
       </header>
+
+      {initialSession.questionCount < initialSession.requestedCount ? (
+        <div className="mb-4">
+          <InlineAlert tone="warning">
+            This session contains {initialSession.questionCount} verified questions instead of the {initialSession.requestedCount} requested. Your timer and score use the actual question count.
+          </InlineAlert>
+        </div>
+      ) : null}
 
       <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3.5">
         <div className="flex items-center justify-between gap-3 text-[11.5px] font-semibold text-slate-600">
@@ -298,6 +308,15 @@ export function PracticeSessionRunner({ initialSession, recovered = false }: Pra
               {question.topic?.name ? <Badge tone="neutral">{question.topic.name}</Badge> : null}
               {question.difficulty ? <Badge tone="neutral" className="capitalize">{question.difficulty}</Badge> : null}
             </div>
+            <AiQuestionExplanation
+              key={current.id}
+              enabled={aiExplanationsEnabled && initialSession.mode === "practice"}
+              targetKind="practice"
+              sessionId={initialSession.id}
+              questionId={current.id}
+              isCorrect={feedback.isCorrect}
+              hasVisual={question.assets.length > 0}
+            />
           </div>
         ) : currentState.selectedOptionKey && !feedback && initialSession.mode === "practice" ? (
           <div className="mt-5">

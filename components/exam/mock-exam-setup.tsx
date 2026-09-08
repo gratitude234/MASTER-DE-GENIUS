@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Clock3, FileCheck2, Flag, RefreshCcw, ShieldCheck } from "lucide-react";
 
+import { UpgradePrompt } from "@/components/billing/upgrade-prompt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { typography } from "@/components/ui/variants";
+import { asPlanLimitNotice, type PlanLimitNotice } from "@/features/billing/limit-notice";
 import type { MockExamSetup } from "@/features/exams/types";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +37,7 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
   const [acknowledged, setAcknowledged] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [planLimit, setPlanLimit] = useState<PlanLimitNotice | null>(null);
 
   const unavailableSubjects = useMemo(
     () => setup.subjects.filter((subject) => !subject.available),
@@ -54,11 +57,22 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
     if (!acknowledged || starting || !canBuildPaper) return;
     setStarting(true);
     setError(null);
+    setPlanLimit(null);
 
     try {
       const response = await fetch("/api/exam/attempts", { method: "POST" });
       const payload = await response.json() as { attemptId?: string; error?: string };
-      if (!response.ok || !payload.attemptId) throw new Error(payload.error || "Could not start mock exam.");
+      if (!response.ok || !payload.attemptId) {
+        // The month is used up, or the day on Master. That is a plan boundary,
+        // not a fault, so it gets the upgrade panel rather than an error band.
+        const notice = asPlanLimitNotice(payload);
+        if (notice) {
+          setPlanLimit(notice);
+          setStarting(false);
+          return;
+        }
+        throw new Error(payload.error || "Could not start mock exam.");
+      }
       router.push(`/exam/${payload.attemptId}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start mock exam.");
@@ -174,6 +188,8 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
         />
         <span><strong className="font-bold text-slate-950">I&apos;m ready to begin.</strong> I understand the timer starts immediately and the final submission is irreversible.</span>
       </label>
+
+      {planLimit ? <UpgradePrompt notice={planLimit} /> : null}
 
       {error ? <InlineAlert tone="danger">{error}</InlineAlert> : null}
 

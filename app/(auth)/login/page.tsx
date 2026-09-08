@@ -8,7 +8,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <section className="rounded-2xl border border-slate-200 bg-white px-7 py-8">
       <h1 className={typography.h1}>Welcome back</h1>
-      <p className="mt-1.5 text-[13.5px] leading-[1.5] text-slate-600">Sign in to continue your JAMB preparation.</p>
+      <p className="mt-1.5 text-[13.5px] leading-[1.5] text-slate-600">Sign in to continue your exam preparation.</p>
       {params.password === "updated" ? (
         <div className="mt-5"><InlineAlert tone="success">Password updated. Sign in with your new password.</InlineAlert></div>
       ) : null}

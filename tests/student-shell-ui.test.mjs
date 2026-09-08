@@ -45,11 +45,29 @@ const subjects = [
   { id: 'chm', slug: 'chemistry', name: 'Chemistry', isCompulsory: false, displayOrder: 4 },
   { id: 'bio', slug: 'biology', name: 'Biology', isCompulsory: false, displayOrder: 5 },
 ];
+const exams = [
+  { id: 'jamb-id', code: 'jamb', name: 'JAMB', shortName: 'JAMB', description: null, available: true, subjects },
+  {
+    id: 'waec-id', code: 'waec', name: 'WAEC', shortName: 'WAEC', description: null, available: true,
+    subjects: [
+      { id: 'waec-mth', slug: 'mathematics', name: 'Mathematics', isCompulsory: false, displayOrder: 1 },
+      { id: 'waec-gov', slug: 'government', name: 'Government', isCompulsory: false, displayOrder: 2 },
+    ],
+  },
+];
+const onboardingProps = { exams, initialSelection: null };
 
 test('sidebar shows the student’s own exam and year, not a hardcoded one', () => {
   const markup = html(h(StudentNavigation, { examLabel: { shortName: 'JAMB', year: 2029 } }));
   assert.ok(markup.includes('JAMB 2029'));
   assert.ok(!markup.includes('JAMB 2027'), 'the hardcoded label is gone');
+});
+
+test('WAEC navigation replaces the JAMB full mock with timed subject practice', () => {
+  const markup = html(h(StudentNavigation, { examLabel: { shortName: 'WAEC', year: 2027 } }));
+  assert.ok(markup.includes('Timed Subject'));
+  assert.ok(markup.includes('href="/practice?timed=1"'));
+  assert.ok(!markup.includes('Mock Exams'));
 });
 
 test('sidebar degrades to a neutral label when no preference is readable', () => {
@@ -75,25 +93,27 @@ test('navigation links are keyboard-visible in both rails', () => {
 });
 
 test('onboarding marks the current step and names every step for screen readers', () => {
-  const markup = html(h(OnboardingFlow, { subjects }));
+  const markup = html(h(OnboardingFlow, onboardingProps));
   assert.ok(markup.includes('aria-label="Onboarding progress"'));
   assert.equal((markup.match(/aria-current="step"/g) ?? []).length, 1, 'exactly one current step');
   assert.ok(markup.includes('Step 1 of 3: Choose your exam — current step'));
   assert.ok(markup.includes('Step 3 of 3: Set your goal'));
 });
 
-test('onboarding step one no longer offers a button that does nothing', () => {
-  const markup = html(h(OnboardingFlow, { subjects }));
+test('onboarding offers real JAMB and WAEC choices while later exams stay honest', () => {
+  const markup = html(h(OnboardingFlow, onboardingProps));
   assert.ok(markup.includes('JAMB / UTME'));
+  assert.ok(markup.includes('WAEC / WASSCE'));
+  assert.ok(markup.includes('Timed subject sessions') || markup.includes('timed subject sessions'));
+  assert.ok(markup.includes('Limited question coverage — not available yet'));
   assert.ok(markup.includes('Selected'), 'the live exam body is marked as chosen');
   assert.ok(markup.includes('Coming in a later phase'), 'scope stays honest about what is not live');
-  // The only control on step one is the one that advances the flow.
-  assert.equal((markup.match(/<button/g) ?? []).length, 1);
+  assert.equal((markup.match(/<button/g) ?? []).length, 3, 'two exam choices plus the advance control');
   assert.ok(markup.includes('Choose subjects'));
 });
 
 test('onboarding advance control is a non-submitting button', () => {
-  const markup = html(h(OnboardingFlow, { subjects }));
+  const markup = html(h(OnboardingFlow, onboardingProps));
   // A stray submit inside the onboarding <form> would post a half-built profile.
   assert.ok(markup.includes('type="button"'));
 });

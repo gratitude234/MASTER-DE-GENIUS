@@ -61,7 +61,7 @@ export default async function HomePage() {
 
       <RecommendedPracticeCard recommendation={recommendation} />
 
-      <QuickActions />
+      <QuickActions examCode={examBody?.code ?? null} />
 
       {recent ? (
         <>
@@ -75,9 +75,9 @@ export default async function HomePage() {
                 date={dateFormatter.format(new Date(latestMock.completedAt))}
                 href={`/progress/results/exam/${latestMock.id}`}
               />
-            ) : (
+            ) : examBody?.code === "jamb" ? (
               <LatestMockEmptyCard />
-            )}
+            ) : null}
             <MistakesCard count={activeMistakes} />
           </div>
 

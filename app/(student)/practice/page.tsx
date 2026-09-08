@@ -10,7 +10,7 @@ import type { ExamBody } from "@/types/domain";
 export default async function PracticePage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; quick?: string }>;
+  searchParams: Promise<{ mode?: string; quick?: string; timed?: string }>;
 }) {
   const params = await searchParams;
   const tab: PracticeTab = params.mode === "past" ? "past" : "practice";
@@ -51,6 +51,7 @@ export default async function PracticePage({
       resumeSession={activeSession}
       recommendation={recommendation}
       prefillFromRecommendation={prefillFromRecommendation}
+      initialMode={params.timed === "1" ? "timed" : "practice"}
     />
   );
 }

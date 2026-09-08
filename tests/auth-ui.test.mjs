@@ -116,3 +116,9 @@ test('target score validation matches the server bounds exactly', () => {
     assert.ok(validateTargetScore(invalid), `${invalid} should fail`);
   }
 });
+
+test('WAEC percentage validation uses its own honest scale', () => {
+  assert.equal(validateTargetScore('70', 'waec'), undefined);
+  assert.match(validateTargetScore('101', 'waec'), /between 1 and 100/);
+  assert.match(validateTargetScore('0', 'waec'), /percentage goal/);
+});

@@ -186,6 +186,14 @@ test('the practice runner names the question as a heading beneath the session', 
   assert.ok(markup.includes('Physics'), 'the session is what the h1 names');
 });
 
+test('a provider shortage is stated and all calculations use the actual paper', () => {
+  const shortened = { ...practiceSession, requestedCount: 50, questionCount: 2 };
+  const markup = renderPractice({ initialSession: shortened });
+  assert.ok(markup.includes('contains 2 verified questions instead of the 50 requested'));
+  assert.ok(markup.includes('timer and score use the actual question count'));
+  assert.ok(markup.includes('Question 1 of 2'));
+});
+
 test('the practice runner exits through a confirmation, not a bare link', () => {
   const markup = renderPractice();
   const exit = markup.match(/<button[^>]*>(?:(?!<\/button>).)*Exit(?:(?!<\/button>).)*<\/button>/s)?.[0];

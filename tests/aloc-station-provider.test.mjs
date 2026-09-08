@@ -75,11 +75,13 @@ test('Station normalizes its response without exposing provider-specific field n
   assert.equal(question.difficulty, 'medium');
 });
 
-test('JAMB, WAEC and NECO are mapped while later exam bodies stay gated', async () => {
+test('Station availability follows the verified exam-specific inventory', async () => {
   const { provider } = upstream([[item(1)]]);
   assert.equal(provider.supportsSubject('jamb', 'physics'), true);
-  assert.equal(provider.supportsSubject('waec', 'physics'), true);
-  assert.equal(provider.supportsSubject('neco', 'physics'), true);
+  assert.equal(provider.supportsSubject('waec', 'mathematics'), true);
+  assert.equal(provider.supportsSubject('waec', 'physics'), false);
+  assert.equal(provider.supportsSubject('neco', 'government'), true);
+  assert.equal(provider.supportsSubject('neco', 'mathematics'), false);
   assert.equal(provider.supportsSubject('post_utme', 'physics'), false);
   assert.equal(provider.supportsSubject('school', 'physics'), false);
 
@@ -92,7 +94,7 @@ test('JAMB, WAEC and NECO are mapped while later exam bodies stay gated', async 
 test('duplicates and malformed answer keys are never used to pad a paper', async () => {
   const invalid = item(2, { correctAnswer: 'z' });
   const { provider } = upstream([[item(1), item(1), invalid]]);
-  const questions = await provider.fetchQuestions({ examBody: 'neco', subjectSlug: 'physics', count: 5 });
+  const questions = await provider.fetchQuestions({ examBody: 'neco', subjectSlug: 'government', count: 5 });
   assert.deepEqual(questions.map((question) => question.source.providerQuestionId), ['station-1']);
 });
 

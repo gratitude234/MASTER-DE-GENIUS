@@ -6,6 +6,8 @@ import { Select } from "@/components/ui/select";
 import { typography } from "@/components/ui/variants";
 import type { Outcome, ReviewItem } from "@/features/results/grading";
 import { cn } from "@/lib/utils";
+import { AiQuestionExplanation } from "@/components/ai/question-explanation";
+import type { ResultKind } from "@/features/results/grading";
 
 /**
  * Outcome is never carried by colour alone: each one keeps its own word and its
@@ -17,7 +19,17 @@ const OUTCOME = {
   unanswered: { label: "Unanswered", tone: "bg-warning-50 text-warning-800", Icon: CircleHelp },
 } as const satisfies Record<Outcome, { label: string; tone: string; Icon: typeof Check }>;
 
-export function AnswerReview({ items }: { items: ReviewItem[] }) {
+export function AnswerReview({
+  items,
+  resultKind,
+  resultId,
+  aiExplanationsEnabled = false,
+}: {
+  items: ReviewItem[];
+  resultKind: ResultKind;
+  resultId: string;
+  aiExplanationsEnabled?: boolean;
+}) {
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
   const [filter, setFilter] = useState<Outcome | "all" | "flagged">("all");
@@ -132,6 +144,16 @@ export function AnswerReview({ items }: { items: ReviewItem[] }) {
                 <p className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-[1.6] text-slate-800">
                   {item.explanation || "An explanation has not been provided for this question yet."}
                 </p>
+                {item.selected ? (
+                  <AiQuestionExplanation
+                    enabled={aiExplanationsEnabled}
+                    targetKind={resultKind}
+                    sessionId={resultId}
+                    questionId={item.id}
+                    isCorrect={item.outcome === "correct"}
+                    hasVisual={item.question.assets.length > 0}
+                  />
+                ) : null}
               </div>
 
               <p className="text-[11px] text-slate-500">

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { planLimitResponse } from "@/features/billing/api";
+import { commitCapability, releaseCapability, reserveCapability } from "@/features/billing/quota";
 import { examErrorResponse, requireExamApiUser } from "@/features/exams/api";
 import { createMockExamAttemptForUser } from "@/features/exams/service";
 import { claimCreation, creationFingerprint, settleCreation } from "@/lib/creation-claim";
@@ -15,6 +17,14 @@ export async function POST() {
   if (limited) return limited;
 
   /*
+   * The plan allowance: one full mock a month on Free, three a day on Master.
+   * Reserved before the paper is built and only committed once a *new* attempt
+   * exists, so resuming an attempt already in progress costs nothing.
+   */
+  const reservation = await reserveCapability(user.id, "mock_attempt");
+  if (!reservation.allowed) return planLimitResponse("mock_attempt", reservation);
+
+  /*
    * The existing one-active-attempt index still does the real work: it makes a
    * duplicate attempt impossible, and the service resumes rather than rebuilds.
    * But that index is only reached after all four subjects have been fetched, so
@@ -25,12 +35,14 @@ export async function POST() {
   const claim = await claimCreation(user.id, "exam", fingerprint);
 
   if (claim.status === "duplicate") {
+    await releaseCapability(reservation.reservationId);
     return NextResponse.json(
       { attemptId: claim.sessionId, resumed: true, totalQuestions: null, deduplicated: true },
       { status: 200 },
     );
   }
   if (claim.status === "in_progress") {
+    await releaseCapability(reservation.reservationId);
     return NextResponse.json(
       { error: "Your paper is already being built. Give it a moment.", code: "CREATION_IN_PROGRESS" },
       { status: 409, headers: { "Retry-After": "5" } },
@@ -40,9 +52,14 @@ export async function POST() {
   try {
     const result = await createMockExamAttemptForUser(user.id);
     await settleCreation(user.id, "exam", fingerprint, result.attemptId);
+    // Returning to a paper already in progress is not a new mock attempt, so
+    // it must not spend the month's — or the day's — allowance.
+    if (result.resumed) await releaseCapability(reservation.reservationId);
+    else await commitCapability(reservation.reservationId);
     return NextResponse.json(result, { status: result.resumed ? 200 : 201 });
   } catch (error) {
     await settleCreation(user.id, "exam", fingerprint, null);
+    await releaseCapability(reservation.reservationId);
     return examErrorResponse(error);
   }
 }

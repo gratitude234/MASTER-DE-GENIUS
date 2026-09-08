@@ -5,7 +5,7 @@ import type { QuestionProvider } from "@/features/questions/providers/types";
 import type { CanonicalQuestion, ProviderCapabilities, QuestionQuery } from "@/features/questions/types";
 import type { ExamBody } from "@/types/domain";
 
-import { isStationSubjectMapped, stationExamType, stationSubject } from "./mapping";
+import { isStationExamSubjectMapped, stationExamType, stationSubject } from "./mapping";
 import { normalizeStationQuestion, type StationDiscardReason } from "./normalize";
 import { requireAlocStationConfig, stationRecords, stationRequest, type StationUsageRecorder } from "./transport";
 
@@ -32,8 +32,7 @@ export class AlocStationQuestionProvider implements QuestionProvider {
   ) {}
 
   supportsSubject(examBody: ExamBody, subjectSlug: string): boolean {
-    return (examBody === "jamb" || examBody === "waec" || examBody === "neco")
-      && isStationSubjectMapped(subjectSlug);
+    return isStationExamSubjectMapped(examBody, subjectSlug);
   }
 
   async fetchQuestions(query: QuestionQuery): Promise<CanonicalQuestion[]> {
@@ -45,7 +44,7 @@ export class AlocStationQuestionProvider implements QuestionProvider {
     }
 
     const examType = stationExamType(query.examBody);
-    const subject = stationSubject(query.subjectSlug);
+    const subject = stationSubject(query.examBody, query.subjectSlug);
     const config = requireAlocStationConfig();
     const seen = new Set(query.excludeSourceIds ?? []);
     const collected: CanonicalQuestion[] = [];

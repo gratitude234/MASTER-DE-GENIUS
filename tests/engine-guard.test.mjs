@@ -58,3 +58,29 @@ test('the guard covers every engine surface it claims to', () => {
   }
   assert.ok(covered.length >= 30, 'the manifest should cover the whole engine, not a sample');
 });
+
+/**
+ * Monetization is production-critical for the same reason the session engine is:
+ * these files decide who has paid, what they were charged, and what their plan
+ * lets them do. A change to any of them must be as deliberate — and as visible
+ * in review — as a change to grading or the timer.
+ */
+test('the billing authority and the Paystack surface are guarded too', () => {
+  const covered = Object.keys(manifest);
+  for (const required of [
+    'features/billing/plans.ts',
+    'features/billing/entitlements.ts',
+    'features/billing/quota.ts',
+    'features/billing/paystack.ts',
+    'features/billing/checkout.ts',
+    'features/billing/webhook.ts',
+    'features/billing/reconcile.ts',
+    'app/api/billing/checkout/route.ts',
+    'app/api/billing/webhook/paystack/route.ts',
+    'app/api/billing/verify/route.ts',
+    'lib/rate-limit.ts',
+    'supabase/migrations/20260908060000_m9_billing_and_entitlements.sql',
+  ]) {
+    assert.ok(covered.includes(required), `${required} must be guarded`);
+  }
+});

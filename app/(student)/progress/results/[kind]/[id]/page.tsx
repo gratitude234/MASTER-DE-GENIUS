@@ -11,6 +11,7 @@ import { buttonClasses, typography } from "@/components/ui/variants";
 import { loadResult } from "@/features/results/service";
 import { requireOnboardedUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { aiExplanationsEnabled } from "@/features/ai/config";
 
 export const dynamic = "force-dynamic";
 
@@ -162,7 +163,12 @@ export default async function ResultPage({ params }: { params: Promise<{ kind: s
         </div>
       </section>
 
-      <AnswerReview items={result.items} />
+      <AnswerReview
+        items={result.items}
+        resultKind={kind}
+        resultId={id}
+        aiExplanationsEnabled={aiExplanationsEnabled()}
+      />
 
       {/* The two ways forward from a result, as the approved system pairs them. */}
       <div className="flex flex-col gap-2.5 sm:flex-row">

@@ -155,6 +155,13 @@ test('?mode=past opens Past questions directly, with the year filter', async () 
   assert.equal((markup.match(/aria-current="page"/g) ?? []).length, 1);
 });
 
+test('?timed=1 preselects timed mode without starting a session', async () => {
+  const markup = await renderPractice({ timed: '1' });
+  assert.ok(markup.includes('<strong class="font-bold text-slate-950">Timed:</strong>'));
+  assert.ok(markup.includes('Start 20-question session'));
+  assert.ok(!markup.includes('/practice/session/'));
+});
+
 test('Past questions does not read history it has nothing to do with', async () => {
   globalThis.__historyReads = 0;
   await renderPractice({ mode: 'past' }, { history: [weakWaves] });
