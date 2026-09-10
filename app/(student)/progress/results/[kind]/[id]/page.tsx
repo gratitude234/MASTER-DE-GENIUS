@@ -12,6 +12,8 @@ import { loadResult } from "@/features/results/service";
 import { requireOnboardedUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { aiExplanationsEnabled } from "@/features/ai/config";
+import { ClassHelpCard } from "@/components/classes/class-help-card";
+import { classRequestHref } from "@/features/classes/links";
 
 export const dynamic = "force-dynamic";
 
@@ -145,6 +147,15 @@ export default async function ResultPage({ params }: { params: Promise<{ kind: s
           Review my mistake bank <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
       </section>
+
+      {weak[0] ? (
+        <ClassHelpCard
+          href={classRequestHref({ source: "result", examType: result.examCode, subjectSlug: weak[0].subjectSlug, subjectName: subjectName(weak[0].subjectSlug) ?? weak[0].subjectSlug, topic: weak[0].name, reason: "weak_topic", accuracy: weak[0].accuracy })}
+          title={`Need help improving ${weak[0].name}?`}
+          description="A Master De Genius tutor can help you understand the areas that gave you trouble in this attempt."
+          label="Request a Class"
+        />
+      ) : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="text-sm font-bold text-slate-950">Topic breakdown</h2>

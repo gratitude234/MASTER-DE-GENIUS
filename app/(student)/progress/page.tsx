@@ -10,6 +10,8 @@ import { mistakeBank } from "@/features/results/grading";
 import { loadHistory } from "@/features/results/service";
 import { requireOnboardedUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { recommendClass } from "@/features/classes/recommendation";
+import { ClassHelpCard } from "@/components/classes/class-help-card";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,7 @@ export default async function ProgressPage({ searchParams }: { searchParams: Pro
 
   // Counting only, over results that are already graded and already loaded.
   const summary = summariseProgress(history);
+  const classRecommendation = recommendClass(history);
 
   return (
     <div className="screen-enter mx-auto max-w-[760px] space-y-4">
@@ -104,6 +107,8 @@ export default async function ProgressPage({ searchParams }: { searchParams: Pro
           />
         )}
       </section>
+
+      {classRecommendation ? <ClassHelpCard href={`/classes?${new URLSearchParams({ request: "1", source: "progress", examType: classRecommendation.examType, subjectSlug: classRecommendation.subjectSlug, subjectName: classRecommendation.subjectName, ...(classRecommendation.topic ? { topic: classRecommendation.topic } : {}), recommendationReason: classRecommendation.reason, ...(classRecommendation.accuracy != null ? { accuracy: String(classRecommendation.accuracy) } : {}) })}`} title={`A focused lesson on ${classRecommendation.topic ?? classRecommendation.subjectName} may help`} description="Your practice history suggests this is a useful area to revisit with a tutor." label="Get Help With This Topic" /> : null}
 
       {mocks.length > 0 ? (
         <section className="rounded-2xl border border-slate-200 bg-white p-[18px]">

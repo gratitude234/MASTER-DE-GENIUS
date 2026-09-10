@@ -14,6 +14,8 @@ import { getActiveExamAttemptSummaryForUser } from "@/features/exams/service";
 import { getStudentProfile } from "@/features/profile/queries";
 import { loadHistory } from "@/features/results/service";
 import { mistakeBank } from "@/features/results/grading";
+import { recommendClass } from "@/features/classes/recommendation";
+import { ClassHelpCard } from "@/components/classes/class-help-card";
 
 const dateFormatter = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
@@ -28,6 +30,7 @@ export default async function HomePage() {
   const recent = scoped[0];
 
   const recommendation = recommendPractice(history, examBodyId);
+  const classRecommendation = recommendClass(history, examBodyId);
   const latestMock = latestMockSummary(history, examBodyId);
   const activeMistakes = mistakeBank(history).filter((mistake) => !mistake.mastered).length;
 
@@ -62,6 +65,15 @@ export default async function HomePage() {
       <RecommendedPracticeCard recommendation={recommendation} />
 
       <QuickActions examCode={examBody?.code ?? null} />
+
+      {classRecommendation ? (
+        <ClassHelpCard
+          href={`/classes?${new URLSearchParams({ request: "1", source: classRecommendation.topic ? "topic_recommendation" : "subject_recommendation", examType: classRecommendation.examType, subjectSlug: classRecommendation.subjectSlug, subjectName: classRecommendation.subjectName, ...(classRecommendation.topic ? { topic: classRecommendation.topic } : {}), recommendationReason: classRecommendation.reason, ...(classRecommendation.accuracy != null ? { accuracy: String(classRecommendation.accuracy) } : {}) })}`}
+          title={`A focused lesson on ${classRecommendation.topic ?? classRecommendation.subjectName} may help`}
+          description="Practise independently, or ask a Master De Genius tutor to explain the ideas with you."
+          label="Get Tutor Help"
+        />
+      ) : null}
 
       {recent ? (
         <>

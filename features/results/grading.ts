@@ -27,6 +27,7 @@ export interface LearningResult {
   id: string;
   kind: ResultKind;
   examBodyId: string;
+  examCode: string;
   title: string;
   completedAt: string;
   startedAt: string;

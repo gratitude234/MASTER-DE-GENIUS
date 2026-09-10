@@ -52,7 +52,7 @@ export async function loadResult(userId: string, kind: ResultKind, id: string): 
     });
   }
   const end = Math.min(Date.parse(completedAt), row.expires_at ? Date.parse(row.expires_at) : Infinity);
-  return { id, kind, examBodyId: row.exam_body_id, completedAt, startedAt: row.started_at,
+  return { id, kind, examBodyId: row.exam_body_id, examCode: exam.code, completedAt, startedAt: row.started_at,
     title: `${exam.short_name} ${kind === "exam" ? "Mock" : "Practice"}`,
     elapsedSeconds: Math.max(0, Math.round((end - Date.parse(row.started_at)) / 1000)),
     ...grade(items, kind === "exam" && exam.code === "jamb"), items };

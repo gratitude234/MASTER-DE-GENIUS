@@ -1,4 +1,6 @@
 import { BrandMark } from "@/components/brand/brand-mark";
+import { SupportHub } from "@/components/support/support-hub";
+import { Suspense } from "react";
 
 /**
  * The approved sign-in composition: one 400px column centred in the viewport,
@@ -8,6 +10,7 @@ import { BrandMark } from "@/components/brand/brand-mark";
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <main className="grid min-h-dvh place-items-center bg-slate-50 px-6 py-8">
+      <Suspense fallback={null}><SupportHub authenticated={false} hasStudentNav={false} /></Suspense>
       <div className="screen-enter w-full max-w-[400px]">
         <div className="mb-9 flex justify-center"><BrandMark /></div>
         {children}

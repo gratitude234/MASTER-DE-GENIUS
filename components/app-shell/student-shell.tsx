@@ -1,4 +1,6 @@
 import { StudentNavigation, type ExamLabel } from "@/components/app-shell/student-navigation";
+import { SupportHub } from "@/components/support/support-hub";
+import { Suspense } from "react";
 
 /**
  * The approved desktop composition: a 250px navy rail, and beside it a single
@@ -14,6 +16,7 @@ export function StudentShell({ examLabel, children }: { examLabel: ExamLabel | n
   return (
     <div className="min-h-screen bg-slate-50">
       <StudentNavigation examLabel={examLabel} />
+      <Suspense fallback={null}><SupportHub /></Suspense>
       <main className="min-h-screen pb-nav-clearance lg:ml-[250px] lg:pb-0">
         <div className="mx-auto w-full max-w-[1080px] px-4 py-5 sm:px-6 lg:px-10 lg:py-9">{children}</div>
       </main>

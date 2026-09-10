@@ -11,6 +11,8 @@ import { mistakeBank } from "@/features/results/grading";
 import { loadHistory } from "@/features/results/service";
 import { requireOnboardedUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { ClassHelpCard } from "@/components/classes/class-help-card";
+import { classRequestHref } from "@/features/classes/links";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,8 @@ const inlineLink =
 export default async function MistakesPage({ searchParams }: { searchParams: Promise<{ subject?: string; topic?: string; status?: string; page?: string }> }) {
   const { user } = await requireOnboardedUser();
   const search = await searchParams;
-  const bank = mistakeBank(await loadHistory(user.id));
+  const history = await loadHistory(user.id);
+  const bank = mistakeBank(history);
   const mastered = search.status === "mastered";
   const subject = search.subject ?? "";
   const topic = search.topic ?? "";
@@ -33,6 +36,9 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
   const page = Math.min(pages, Math.max(1, Number.parseInt(search.page ?? "1", 10) || 1));
   const pageLink = (n: number) => `/progress/mistakes?${new URLSearchParams({ subject, topic, status: mastered ? "mastered" : "active", page: String(n) })}`;
   const revisionSubjects = [...new Map(filtered.map(m => [m.item.question.subject.slug, m.item.question.subject.name])).entries()];
+  const repeated = bank.filter((item) => !item.mastered && item.failures >= 2 && item.item.question.topic)
+    .sort((a, b) => b.failures - a.failures || a.item.question.prompt.localeCompare(b.item.question.prompt))[0];
+  const repeatedResult = repeated ? history.find((result) => result.id === repeated.resultId && result.kind === repeated.kind) : null;
 
   return (
     <div className="screen-enter mx-auto max-w-[720px] space-y-4">
@@ -95,6 +101,8 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
           </div>
         </section>
       ) : null}
+
+      {!mastered && repeated && repeatedResult ? <ClassHelpCard href={classRequestHref({ source: "mistake_bank", examType: repeatedResult.examCode, subjectSlug: repeated.item.question.subject.slug, subjectName: repeated.item.question.subject.name, topic: repeated.item.question.topic?.name, reason: "repeated_mistakes" })} title={`You've missed several questions from ${repeated.item.question.topic?.name} recently`} description="Practise them again, or ask a tutor to work through the underlying idea with you." label="Get Tutor Help" /> : null}
 
       {/*
         Two genuinely different situations. "Nothing here yet" is an invitation

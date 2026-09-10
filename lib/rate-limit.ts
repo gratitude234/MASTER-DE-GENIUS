@@ -87,6 +87,12 @@ export const RATE_LIMITS = {
     capacity: positiveNumber(process.env.RATE_LIMIT_BILLING_VERIFY_BURST, 12),
     perHour: positiveNumber(process.env.RATE_LIMIT_BILLING_VERIFY_PER_HOUR, 120),
   },
+  /** Class enquiries are cheap, but this prevents scripted CRM spam. */
+  classLeadCreate: {
+    name: "class_lead_create",
+    capacity: positiveNumber(process.env.RATE_LIMIT_CLASS_LEAD_BURST, 3),
+    perHour: positiveNumber(process.env.RATE_LIMIT_CLASS_LEAD_PER_HOUR, 10),
+  },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export interface RateLimitResult {

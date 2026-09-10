@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database";
 import { supabasePublishableKey, supabaseUrl } from "@/lib/supabase/env";
 
-const protectedPrefixes = ["/home", "/practice", "/mock", "/progress", "/me", "/exam", "/onboarding"];
+const protectedPrefixes = ["/home", "/practice", "/mock", "/progress", "/me", "/exam", "/onboarding", "/classes", "/admin"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });

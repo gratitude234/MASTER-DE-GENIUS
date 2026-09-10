@@ -14,6 +14,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       ) : null}
       <div className="mt-6"><LoginForm nextPath={params.next} /></div>
       <div className="mt-5 text-center text-xs text-slate-500">New here? <Link href="/signup" className="rounded font-bold text-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2">Create account</Link></div>
+      <div className="mt-3 text-center text-xs"><Link href="/premium-classes" className="rounded font-bold text-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2">Explore Premium Classes</Link></div>
     </section>
   );
 }

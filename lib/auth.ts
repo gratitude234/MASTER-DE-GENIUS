@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isAppAdmin } from "@/features/classes/service";
 
 export async function requireUser() {
   const supabase = await createClient();
@@ -9,6 +10,12 @@ export async function requireUser() {
     redirect("/login");
   }
 
+  return { supabase, user };
+}
+
+export async function requireAdmin() {
+  const { supabase, user } = await requireUser();
+  if (!(await isAppAdmin(user.id))) redirect("/home");
   return { supabase, user };
 }
 

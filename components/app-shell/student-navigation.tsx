@@ -10,6 +10,7 @@ import {
   GraduationCap,
   Home,
   ListChecks,
+  BookOpenCheck,
   Sparkles,
   UserRound,
 } from "lucide-react";
@@ -32,6 +33,7 @@ const desktopGroups = [
       { href: "/practice", label: "Practice", icon: GraduationCap },
       { href: "/mock", label: "Mock Exams", icon: ClipboardCheck },
       { href: "/practice?mode=past", label: "Past Questions", icon: FileQuestion },
+      { href: "/classes", label: "Master Classes", icon: BookOpenCheck },
     ],
   },
   {

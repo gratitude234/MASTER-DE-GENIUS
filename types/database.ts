@@ -925,12 +925,66 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["student_subject_preferences"]["Insert"]>;
         Relationships: [];
       };
+      app_admins: {
+        Row: { user_id: string; created_at: string };
+        Insert: { user_id: string; created_at?: string };
+        Update: { user_id?: string; created_at?: string };
+        Relationships: [];
+      };
+      premium_class_leads: {
+        Row: {
+          id: string; user_id: string; student_name: string; exam_type: "jamb" | "waec";
+          subject_slug: string; subject_name: string; topic: string | null;
+          class_type: Database["public"]["Enums"]["class_type"]; phone: string; email: string | null;
+          preferred_contact_method: Database["public"]["Enums"]["contact_method"];
+          preferred_schedule: string; message: string | null;
+          source: Database["public"]["Enums"]["class_lead_source"];
+          recommendation_reason: Database["public"]["Enums"]["class_recommendation_reason"];
+          recent_accuracy: number | null; fingerprint: string;
+          status: Database["public"]["Enums"]["class_lead_status"];
+          assigned_to: string | null; admin_notes: string | null;
+          created_at: string; updated_at: string; contacted_at: string | null;
+          enrolled_at: string | null; closed_at: string | null;
+        };
+        Insert: {
+          id?: string; user_id: string; student_name: string; exam_type: "jamb" | "waec";
+          subject_slug: string; subject_name: string; topic?: string | null;
+          class_type: Database["public"]["Enums"]["class_type"]; phone: string; email?: string | null;
+          preferred_contact_method: Database["public"]["Enums"]["contact_method"];
+          preferred_schedule: string; message?: string | null;
+          source: Database["public"]["Enums"]["class_lead_source"];
+          recommendation_reason?: Database["public"]["Enums"]["class_recommendation_reason"];
+          recent_accuracy?: number | null; fingerprint: string;
+          status?: Database["public"]["Enums"]["class_lead_status"];
+          assigned_to?: string | null; admin_notes?: string | null; created_at?: string; updated_at?: string;
+          contacted_at?: string | null; enrolled_at?: string | null; closed_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["premium_class_leads"]["Insert"]>;
+        Relationships: [];
+      };
+      marketing_consents: {
+        Row: { id: number; user_id: string; channel: Database["public"]["Enums"]["marketing_channel"]; purpose: string; source_lead_id: string | null; granted_at: string; revoked_at: string | null };
+        Insert: { id?: number; user_id: string; channel: Database["public"]["Enums"]["marketing_channel"]; purpose?: string; source_lead_id?: string | null; granted_at?: string; revoked_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["marketing_consents"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
       consume_rate_limit: {
         Args: { p_key: string; p_capacity: number; p_refill_per_second: number; p_cost?: number };
         Returns: { allowed: boolean; remaining: number; retry_after_seconds: number }[];
+      };
+      create_premium_class_lead: {
+        Args: {
+          p_user_id: string; p_student_name: string; p_exam_type: string; p_subject_slug: string;
+          p_subject_name: string; p_topic: string | null; p_class_type: Database["public"]["Enums"]["class_type"];
+          p_phone: string; p_email: string | null; p_preferred_contact_method: Database["public"]["Enums"]["contact_method"];
+          p_preferred_schedule: string; p_message: string | null; p_source: Database["public"]["Enums"]["class_lead_source"];
+          p_recommendation_reason: Database["public"]["Enums"]["class_recommendation_reason"];
+          p_recent_accuracy: number | null; p_fingerprint: string;
+        };
+        Returns: { lead_id: string; deduplicated: boolean }[];
       };
       claim_ai_explanation: {
         Args: {
@@ -1210,6 +1264,12 @@ export type Database = {
       practice_session_status: "in_progress" | "completed" | "expired" | "abandoned";
       exam_attempt_status: "created" | "in_progress" | "submitted" | "expired" | "abandoned";
       exam_submission_reason: "manual" | "time_expired";
+      class_lead_status: "new" | "contacted" | "interested" | "follow_up" | "enrolled" | "not_interested" | "closed";
+      class_type: "group" | "private" | "topic_clinic" | "jamb_bootcamp" | "waec_bootcamp" | "mock_review" | "not_sure";
+      class_lead_source: "class_page" | "result" | "progress" | "mistake_bank" | "topic_recommendation" | "subject_recommendation" | "persistent_support_cta" | "public_classes_cta" | "other";
+      contact_method: "whatsapp" | "phone" | "email";
+      class_recommendation_reason: "weak_topic" | "weak_subject" | "repeated_mistakes" | "student_requested";
+      marketing_channel: "whatsapp" | "email";
     };
     CompositeTypes: Record<string, never>;
   };
