@@ -11,7 +11,7 @@ const { recommendClass } = await import('../features/classes/recommendation.ts')
 const { parseClassLeadInput } = await import('../features/classes/validation.ts');
 const { classRequestHref } = await import('../features/classes/links.ts');
 const { shouldShowSupportCta } = await import('../features/support/visibility.ts');
-const { whatsappUrl, generalSupportMessage, adminClassMessage } = await import('../features/classes/whatsapp.ts');
+const { whatsappUrl, generalSupportMessage, adminClassMessage, leadReference, studentFollowUpMessage } = await import('../features/classes/whatsapp.ts');
 
 const question = (id, topic = { slug: 'stoichiometry', name: 'Stoichiometry' }) => ({
   id, prompt: 'A safe sample question', examBody: 'jamb',
@@ -130,6 +130,45 @@ test('admin WhatsApp copy contains no score, answers or detailed performance', (
   const message = adminClassMessage({ studentName: 'David Student', examType: 'jamb', subjectName: 'Physics' });
   assert.ok(message.includes('JAMB Physics'));
   assert.ok(!/accuracy|score|answer|mistake/i.test(message));
+});
+
+test('the follow-up message identifies the request without leaking performance data', () => {
+  const reference = leadReference('3f2a91c4-55de-4c1e-9a77-0b2c8d4e5f60');
+  assert.equal(reference, '3F2A91');
+  const message = studentFollowUpMessage({ firstName: 'David', subjectName: 'Chemistry', reference });
+  assert.match(message, /David/);
+  assert.match(message, /Chemistry/);
+  assert.match(message, /3F2A91/);
+  // The student's own name, subject and reference are fine. Their results are not.
+  assert.ok(!/accuracy|score|%|mistake|answer|topic missed/i.test(message));
+});
+
+test('the follow-up message still reads correctly without a subject', () => {
+  const message = studentFollowUpMessage({ firstName: 'Ada', reference: 'ABC123' });
+  assert.match(message, /requested a class/);
+  assert.ok(!message.includes('undefined'));
+  assert.ok(!message.includes('null'));
+});
+
+test('availability is a preset choice, so it can never block a submission', () => {
+  const flow = fs.readFileSync(new URL('../components/classes/class-request-flow.tsx', import.meta.url), 'utf8');
+  const options = flow.match(/const SCHEDULE_OPTIONS = \[([\s\S]*?)\] as const;/)?.[1] ?? '';
+  assert.ok(options.includes('Flexible / anytime'));
+  assert.match(flow, /const DEFAULT_SCHEDULE = "Flexible \/ anytime"/);
+  // The old required free-text field is gone.
+  assert.ok(!/name="preferredSchedule"/.test(flow));
+  // Whatever is preselected must satisfy the server's own validator.
+  const parsed = parseClassLeadInput({ ...validLead, preferredSchedule: 'Flexible / anytime' });
+  assert.equal(parsed.preferredSchedule, 'Flexible / anytime');
+});
+
+test('a returning student does not retype the number we already hold', () => {
+  const service = fs.readFileSync(new URL('../features/classes/service.ts', import.meta.url), 'utf8');
+  const lookup = service.match(/export async function latestLeadPhone[\s\S]*?\n}/)?.[0] ?? '';
+  assert.match(lookup, /eq\("user_id", userId\)/, 'the prefill must be scoped to the requesting student');
+  assert.match(lookup, /order\("created_at", \{ ascending: false \}\)/);
+  const page = fs.readFileSync(new URL('../app/(student)/classes/page.tsx', import.meta.url), 'utf8');
+  assert.equal((page.match(/defaultPhone=\{defaultPhone\}/g) ?? []).length, 2, 'both request entry points prefill');
 });
 
 test('migration locks browser writes, owns RLS and atomically deduplicates', () => {

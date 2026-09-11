@@ -3,7 +3,7 @@ import { ClassRequestFlow } from "@/components/classes/class-request-flow";
 import { Badge } from "@/components/ui/badge";
 import { typography } from "@/components/ui/variants";
 import { CLASS_TYPE_LABELS, CLASS_LEAD_SOURCES, STUDENT_STATUS_LABELS, type ClassLeadSource, type RecommendationReason } from "@/features/classes/types";
-import { listStudentLeads, loadClassCatalogue } from "@/features/classes/service";
+import { latestLeadPhone, listStudentLeads, loadClassCatalogue } from "@/features/classes/service";
 import { recommendClass } from "@/features/classes/recommendation";
 import { getStudentProfile } from "@/features/profile/queries";
 import { loadHistory } from "@/features/results/service";
@@ -14,7 +14,7 @@ const date = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", 
 
 export default async function ClassesPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const [{ user, profile, preference, examBody }, query] = await Promise.all([getStudentProfile(), searchParams]);
-  const [history, subjects, requests] = await Promise.all([loadHistory(user.id), loadClassCatalogue(examBody?.code), listStudentLeads(user.id)]);
+  const [history, subjects, requests, defaultPhone] = await Promise.all([loadHistory(user.id), loadClassCatalogue(examBody?.code), listStudentLeads(user.id), latestLeadPhone(user.id)]);
   const recommendation = recommendClass(history, preference?.exam_body_id);
   const source = CLASS_LEAD_SOURCES.includes(query.source as ClassLeadSource) ? query.source as ClassLeadSource : "class_page";
   const reasonSet = new Set<RecommendationReason>(["weak_topic", "weak_subject", "repeated_mistakes", "student_requested"]);
@@ -32,10 +32,10 @@ export default async function ClassesPage({ searchParams }: { searchParams: Prom
       <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-200">Master Classes</p>
       <h1 className="mt-2 font-serif text-3xl font-semibold tracking-tight sm:text-4xl">Personal help when practice is not enough.</h1>
       <p className="mt-3 max-w-2xl text-[13px] leading-6 text-white/65">Learn directly from experienced tutors through focused support for JAMB and WAEC subjects.</p>
-      <div className="mt-5"><ClassRequestFlow subjects={subjects} studentName={profile.full_name} email={user.email ?? ""} initialOpen={query.request === "1"} initialExamType={examType} initialSubjectSlug={initialSubjectSlug} initialTopic={initialTopic} source={source} recommendationReason={reason} recentAccuracy={accuracy} /></div>
+      <div className="mt-5"><ClassRequestFlow subjects={subjects} studentName={profile.full_name} email={user.email ?? ""} defaultPhone={defaultPhone} initialOpen={query.request === "1"} initialExamType={examType} initialSubjectSlug={initialSubjectSlug} initialTopic={initialTopic} source={source} recommendationReason={reason} recentAccuracy={accuracy} /></div>
     </header>
 
-    {recommendation ? <section className="rounded-2xl border border-brand-200 bg-brand-50 p-5"><p className={cn(typography.eyebrow, "text-brand-500")}>Recommended for you</p><div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className={typography.h2}>{recommendation.subjectName}{recommendation.topic ? ` · ${recommendation.topic}` : ""}</h2>{recommendation.accuracy != null ? <p className="mono-number mt-1 text-xs font-semibold text-slate-600">Recent accuracy: {recommendation.accuracy}%</p> : null}<p className="mt-2 max-w-xl text-[12.5px] leading-5 text-slate-600">{recommendation.reason === "repeated_mistakes" ? "You have met this area more than once. A focused lesson may help the ideas click." : "A focused lesson may help you improve your understanding of this area."}</p></div><ClassRequestFlow subjects={subjects} studentName={profile.full_name} email={user.email ?? ""} initialExamType={recommendation.examType} initialSubjectSlug={recommendation.subjectSlug} initialTopic={recommendation.topic ?? undefined} source={recommendation.topic ? "topic_recommendation" : "subject_recommendation"} recommendationReason={recommendation.reason} recentAccuracy={recommendation.accuracy} /></div></section> : null}
+    {recommendation ? <section className="rounded-2xl border border-brand-200 bg-brand-50 p-5"><p className={cn(typography.eyebrow, "text-brand-500")}>Recommended for you</p><div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className={typography.h2}>{recommendation.subjectName}{recommendation.topic ? ` · ${recommendation.topic}` : ""}</h2>{recommendation.accuracy != null ? <p className="mono-number mt-1 text-xs font-semibold text-slate-600">Recent accuracy: {recommendation.accuracy}%</p> : null}<p className="mt-2 max-w-xl text-[12.5px] leading-5 text-slate-600">{recommendation.reason === "repeated_mistakes" ? "You have met this area more than once. A focused lesson may help the ideas click." : "A focused lesson may help you improve your understanding of this area."}</p></div><ClassRequestFlow subjects={subjects} studentName={profile.full_name} email={user.email ?? ""} defaultPhone={defaultPhone} initialExamType={recommendation.examType} initialSubjectSlug={recommendation.subjectSlug} initialTopic={recommendation.topic ?? undefined} source={recommendation.topic ? "topic_recommendation" : "subject_recommendation"} recommendationReason={recommendation.reason} recentAccuracy={recommendation.accuracy} /></div></section> : null}
 
     <section><h2 className={typography.h2}>Choose the support that fits</h2><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[
       [UsersRound, "Group Classes", "Learn with other students in a structured class."],

@@ -13,7 +13,7 @@ There was no admin-role store, CRM, support system, contact configuration, or an
 - A permanent **Need Help?** floating control and accessible support sheet.
 - Contextual tutoring prompts on Home, Progress, Results, and Mistake Bank.
 - A provider-independent recommendation service.
-- A request-class flow with known profile and academic context prefilled.
+- A two-step request-class flow with known profile, phone and academic context prefilled.
 - Recent request history with student-friendly status labels.
 - A server-authorized admin CRM at `/admin/classes`.
 - Safe student and admin WhatsApp click-to-chat links.
@@ -47,6 +47,22 @@ It appears throughout the shared student shell: dashboard, practice setup, resul
 - `/admin/*` — CRM workspaces.
 
 The conservative suppression of every live practice session avoids overlap with question controls and removes any accidental navigation path during an assessment. It returns automatically on result/submission routes.
+
+## Request flow
+
+The flow is two steps inside the same sheet. Step one asks what the student needs help with, which is subject, topic and class type, and is usually already answered by the link they arrived through. Step two asks how to reach them. Splitting it halves the perceived length and lets step one act as a confirmation rather than a form.
+
+Friction removed from the original single-page version:
+
+- **Phone is prefilled** from the student's most recent lead through `latestLeadPhone`. No table stores a student phone number, so their last request is the only record of it. A repeat enquiry becomes confirm-and-send.
+- **Availability is a preset choice**, not required free text. It can never block a submission, and Academic Support gets a value it can filter on instead of a sentence.
+- **The phone number validates as you type**, so a typo no longer costs a server round trip and a red banner at the top of a long form.
+- **Preferred contact collapsed** from a select into a single opt-out checkbox, since WhatsApp is the default and the number is directly above it.
+- **Consent kept per channel** but visually lightened, so two unticked boxes no longer read as a barrier above the submit button.
+
+The success screen now leads with WhatsApp rather than offering it beside a back link. The prefilled message carries the student's own first name, the subject, and a short request reference from `leadReference`. The same reference is printed on the admin lead card, so a message arriving in WhatsApp can be matched to its CRM row. Sending remains the student's choice, and the message still carries no scores, answers or performance history.
+
+The form states that Academic Support usually replies within a day. That is a promise the business has to keep, and it is a single string in `components/classes/class-request-flow.tsx` if the real figure differs.
 
 ## Recommendation logic
 

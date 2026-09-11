@@ -20,10 +20,19 @@ export function generalSupportMessage(kind: "academic" | "platform" | "general" 
   return "Hello Master De Genius, I need some help.";
 }
 
-export function studentClassMessage(subjectName?: string | null) {
-  return subjectName
-    ? `Hello Master De Genius, I would like information about your ${subjectName} classes.`
-    : "Hello Master De Genius, I would like information about your Premium Classes.";
+/** Short public reference shown to the student and on the admin lead card. */
+export function leadReference(leadId: string) {
+  return leadId.replace(/-/g, "").slice(0, 6).toUpperCase();
+}
+
+/**
+ * Sent by the student after a request, so the enquiry reaches a channel the
+ * business actually watches. It carries only the student's own first name,
+ * the subject they asked about, and their own request reference.
+ */
+export function studentFollowUpMessage(input: { firstName: string; subjectName?: string | null; reference: string }) {
+  const subject = input.subjectName ? `${input.subjectName} ` : "";
+  return `Hello Master De Genius, this is ${input.firstName}. I just requested a ${subject}class on the app. My request reference is ${input.reference}.`;
 }
 
 export function adminClassMessage(input: Pick<ClassLeadInput, "studentName" | "examType" | "subjectName">) {

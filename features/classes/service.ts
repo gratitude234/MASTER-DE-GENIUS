@@ -72,6 +72,19 @@ export async function listStudentLeads(userId: string, limit = 8) {
   return data;
 }
 
+/**
+ * The number a student last asked us to call. No profile table stores a phone,
+ * so their most recent request is the only record of it, and reusing it saves
+ * them retyping the one field that matters most on every later enquiry.
+ */
+export async function latestLeadPhone(userId: string) {
+  const db = createAdminClient();
+  const { data } = await db.from("premium_class_leads")
+    .select("phone").eq("user_id", userId)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return data?.phone ?? "";
+}
+
 export async function isAppAdmin(userId: string) {
   const db = createAdminClient();
   const { data } = await db.from("app_admins").select("user_id").eq("user_id", userId).maybeSingle();
