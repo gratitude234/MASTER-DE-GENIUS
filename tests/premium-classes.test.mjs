@@ -236,10 +236,20 @@ test('no analytics vendor was introduced for this feature', () => {
   assert.ok(!deps.some((name) => /posthog|mixpanel|amplitude|segment|plausible|ga4/i.test(name)));
 });
 
-test('admin mutation authenticates and checks the allowlist before update', () => {
+test('admin mutation authorizes the CRM permission before reading input or updating', () => {
   const route = fs.readFileSync(new URL('../app/api/admin/classes/leads/[id]/route.ts', import.meta.url), 'utf8');
   const handler = route.slice(route.indexOf('export async function PATCH'));
-  assert.ok(handler.indexOf('supabase.auth.getUser') < handler.indexOf('isAppAdmin'));
-  assert.ok(handler.indexOf('isAppAdmin') < handler.indexOf('updateAdminLead'));
-  assert.match(route, /status: 403/);
+  assert.ok(handler.indexOf('authorizeAdmin("classes.manage")') >= 0, 'the route checks the role permission, not bare membership');
+  assert.ok(handler.indexOf('authorizeAdmin') < handler.indexOf('request.json'));
+  assert.ok(handler.indexOf('authorizeAdmin') < handler.indexOf('updateAdminLead'));
+
+  const auth = fs.readFileSync(new URL('../features/admin/auth.ts', import.meta.url), 'utf8');
+  const authorize = auth.slice(auth.indexOf('export async function authorizeAdmin'));
+  assert.ok(authorize.indexOf('supabase.auth.getUser') < authorize.indexOf('loadMembership'), 'the session is verified before membership');
+  assert.match(authorize, /status: 403/);
+
+  const service = fs.readFileSync(new URL('../features/classes/service.ts', import.meta.url), 'utf8');
+  const update = service.match(/export async function updateAdminLead[\s\S]*?\n}/)?.[0] ?? '';
+  assert.match(update, /rpc\("admin_update_class_lead"/, 'lead changes go through the audited database function');
+  assert.ok(!/\.update\(/.test(update), 'no direct table update bypasses the audit trail');
 });

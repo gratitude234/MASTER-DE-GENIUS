@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isAppAdmin } from "@/features/classes/service";
+import { isAccountSuspended } from "@/lib/account-status";
 
 export async function requireUser() {
   const supabase = await createClient();
@@ -10,12 +10,12 @@ export async function requireUser() {
     redirect("/login");
   }
 
-  return { supabase, user };
-}
+  // A suspended account can hold a still-valid token for a while after the Auth
+  // ban; the pages stop serving it immediately rather than when it expires.
+  if (await isAccountSuspended(user.id)) {
+    redirect("/suspended");
+  }
 
-export async function requireAdmin() {
-  const { supabase, user } = await requireUser();
-  if (!(await isAppAdmin(user.id))) redirect("/home");
   return { supabase, user };
 }
 

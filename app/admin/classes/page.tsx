@@ -1,35 +1,147 @@
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
-import { AdminLeadActions } from "@/components/classes/admin-lead-actions";
-import { Badge } from "@/components/ui/badge";
+import { AdminPageHeader, DataTable, EmptyRow, Field, FilterBar, Pagination, ResultCount, cell } from "@/components/admin/admin-ui";
+import { SearchField } from "@/components/admin/search-field";
+import { LeadStatusBadge } from "@/components/admin/status-badges";
 import { Select } from "@/components/ui/select";
-import { buttonClasses, typography } from "@/components/ui/variants";
-import { ADMIN_STATUS_LABELS, CLASS_LEAD_STATUSES, CLASS_TYPE_LABELS } from "@/features/classes/types";
+import { fieldClasses } from "@/components/ui/variants";
+import { requireAdminPermission } from "@/features/admin/auth";
+import { displayName, loadAssignees } from "@/features/admin/directory";
+import { formatCount, formatDateTime, humanize } from "@/features/admin/format";
+import { dateParam, hrefWith, pageParam, textParam, type SearchParams } from "@/features/admin/params";
 import { countLeadsByStatus, listAdminLeads, loadClassCatalogue } from "@/features/classes/service";
-import { adminClassMessage, leadReference, whatsappUrl } from "@/features/classes/whatsapp";
+import { ADMIN_STATUS_LABELS, CLASS_LEAD_STATUSES, CLASS_TYPE_LABELS } from "@/features/classes/types";
+import { leadReference } from "@/features/classes/whatsapp";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
-const date = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 
-export default async function AdminClassesPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { page: requestedPage, ...filters } = await searchParams;
-  const [{ leads, total, page, pageCount }, totals, subjects] = await Promise.all([
-    listAdminLeads(filters, Number.parseInt(requestedPage ?? "1", 10) || 1),
+export default async function AdminClassesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const [admin, params] = await Promise.all([requireAdminPermission("classes.view"), searchParams]);
+  const filters = {
+    status: textParam(params, "status"),
+    exam: textParam(params, "exam"),
+    subject: textParam(params, "subject"),
+    classType: textParam(params, "classType"),
+    assignee: textParam(params, "assignee"),
+    search: textParam(params, "search"),
+    from: dateParam(params, "from"),
+    to: dateParam(params, "to"),
+  };
+  const page = pageParam(params);
+
+  const [{ leads, total, pageCount }, totals, subjects, assignees] = await Promise.all([
+    listAdminLeads(filters, page),
     countLeadsByStatus(),
     loadClassCatalogue(),
+    loadAssignees(admin.userId, "classes.manage"),
   ]);
-  const filterQuery = (next: number) => new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value)) as Record<string, string>, page: String(next) }).toString();
-  const number = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER?.replace(/\D/g, "") || null;
-  return <div className="screen-enter space-y-5"><header><p className={cn(typography.eyebrow, "text-brand-500")}>Academic Support</p><h1 className={cn("mt-1", typography.h1)}>Premium Classes CRM</h1><p className="mt-1 text-xs text-slate-600">Follow every request from first contact through enrolment.</p></header>
-    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">{CLASS_LEAD_STATUSES.map((status) => <div key={status} className="flex flex-col-reverse rounded-xl border border-slate-200 bg-white p-3"><dt className="mt-1 text-[10px] font-semibold text-slate-500">{ADMIN_STATUS_LABELS[status]}</dt><dd className="mono-number text-xl font-semibold text-slate-950">{totals[status]}</dd></div>)}</dl>
-    <form className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3 lg:grid-cols-6"><label className="text-xs font-semibold">Status<Select name="status" defaultValue={filters.status ?? ""} containerClassName="mt-1"><option value="">All</option>{CLASS_LEAD_STATUSES.map((value) => <option key={value} value={value}>{ADMIN_STATUS_LABELS[value]}</option>)}</Select></label><label className="text-xs font-semibold">Exam<Select name="exam" defaultValue={filters.exam ?? ""} containerClassName="mt-1"><option value="">All</option><option value="jamb">JAMB</option><option value="waec">WAEC</option></Select></label><label className="text-xs font-semibold">Subject<Select name="subject" defaultValue={filters.subject ?? ""} containerClassName="mt-1"><option value="">All</option>{subjects.map((subject) => <option key={subject.id} value={subject.slug}>{subject.name}</option>)}</Select></label><label className="text-xs font-semibold">Class type<Select name="classType" defaultValue={filters.classType ?? ""} containerClassName="mt-1"><option value="">All</option>{Object.entries(CLASS_TYPE_LABELS).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</Select></label><label className="text-xs font-semibold">From<input type="date" name="from" defaultValue={filters.from ?? ""} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-xs" /></label><label className="text-xs font-semibold">Search<input name="search" defaultValue={filters.search ?? ""} placeholder="Name, email, phone" className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 px-3 text-xs" /></label><button className={buttonClasses({ variant: "dark", size: "md", className: "sm:col-span-3 lg:col-span-6" })}>Apply filters</button></form>
-    <p className="text-xs font-bold text-slate-700">{total === leads.length ? `${total} lead${total === 1 ? "" : "s"}` : `Showing ${leads.length} of ${total} leads`}</p>
-    <div className="space-y-3">{leads.map((lead) => { const wa = whatsappUrl(adminClassMessage({ studentName: lead.student_name, examType: lead.exam_type, subjectName: lead.subject_name }), lead.phone.replace(/\D/g, "") || number); return <article key={lead.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-bold text-slate-950">{lead.student_name}</h2><p className="mt-1 text-xs text-slate-600">{lead.exam_type.toUpperCase()} · {lead.subject_name}{lead.topic ? ` · ${lead.topic}` : ""} · {CLASS_TYPE_LABELS[lead.class_type]}</p><p className="mt-1 text-[11px] text-slate-500">{date.format(new Date(lead.created_at))} · Source: {lead.source.replaceAll("_", " ")} · Ref <span className="mono-number font-semibold text-slate-700">{leadReference(lead.id)}</span></p></div><Badge tone={lead.status === "enrolled" ? "success" : lead.status === "new" ? "warning" : "brand"}>{ADMIN_STATUS_LABELS[lead.status]}</Badge></div><dl className="mt-4 grid gap-2 text-xs sm:grid-cols-3"><div><dt className="font-bold text-slate-500">Contact</dt><dd className="mt-1 text-slate-950">{lead.phone}<br/>{lead.email || "No email"} · prefers {lead.preferred_contact_method}</dd></div><div><dt className="font-bold text-slate-500">Availability</dt><dd className="mt-1 text-slate-950">{lead.preferred_schedule}</dd></div><div><dt className="font-bold text-slate-500">Recommendation</dt><dd className="mt-1 text-slate-950">{lead.recommendation_reason.replaceAll("_", " ")}{lead.recent_accuracy != null ? ` · ${lead.recent_accuracy}% recent accuracy` : ""}</dd></div></dl>{lead.message ? <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-700">{lead.message}</p> : null}{wa ? <a href={wa} target="_blank" rel="noreferrer" className={buttonClasses({ variant: "secondary", size: "sm", className: "mt-4" })}>Message on WhatsApp <ExternalLink className="ml-1 h-3.5 w-3.5" aria-hidden="true" /></a> : null}<div className="mt-4"><AdminLeadActions id={lead.id} initialStatus={lead.status} initialNotes={lead.admin_notes} /></div></article>; })}</div>
-    {pageCount > 1 ? <nav className="flex items-center justify-between gap-3" aria-label="Lead pages">
-      {page > 1 ? <Link href={`/admin/classes?${filterQuery(page - 1)}`} className={buttonClasses({ variant: "secondary", size: "sm" })}>Previous</Link> : <span />}
-      <p className="text-xs font-semibold text-slate-600">Page {page} of {pageCount}</p>
-      {page < pageCount ? <Link href={`/admin/classes?${filterQuery(page + 1)}`} className={buttonClasses({ variant: "secondary", size: "sm" })}>Next</Link> : <span />}
-    </nav> : null}
-  </div>;
+  const owners = new Map(assignees.map((entry) => [entry.userId, displayName(entry)]));
+
+  return (
+    <div>
+      <AdminPageHeader title="Master Classes" description="Every Premium Class request, from first contact through enrolment." />
+
+      <nav aria-label="Lead status" className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        {CLASS_LEAD_STATUSES.map((status) => {
+          const active = filters.status === status;
+          return (
+            <Link
+              key={status}
+              href={hrefWith("/admin/classes", { ...filters, status: undefined }, { status: active ? undefined : status })}
+              aria-current={active ? "true" : undefined}
+              className={cn("rounded-xl border bg-white px-3 py-2.5", active ? "border-slate-950 ring-1 ring-slate-950" : "border-slate-200 hover:border-slate-300")}
+            >
+              <span className="block text-[10.5px] font-semibold text-slate-500">{ADMIN_STATUS_LABELS[status]}</span>
+              <span className="mono-number block text-lg font-semibold text-slate-950">{formatCount(totals[status])}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      <FilterBar action="/admin/classes" resetHref="/admin/classes">
+        <Field label="Search" className="sm:col-span-2">
+          <SearchField label="Search leads" defaultValue={filters.search} placeholder="Name, email or phone" />
+        </Field>
+        <Field label="Status">
+          <Select name="status" size="md" defaultValue={filters.status ?? ""}>
+            <option value="">All statuses</option>
+            {CLASS_LEAD_STATUSES.map((value) => <option key={value} value={value}>{ADMIN_STATUS_LABELS[value]}</option>)}
+          </Select>
+        </Field>
+        <Field label="Exam">
+          <Select name="exam" size="md" defaultValue={filters.exam ?? ""}>
+            <option value="">All exams</option>
+            <option value="jamb">JAMB</option>
+            <option value="waec">WAEC</option>
+          </Select>
+        </Field>
+        <Field label="Subject">
+          <Select name="subject" size="md" defaultValue={filters.subject ?? ""}>
+            <option value="">All subjects</option>
+            {subjects.map((subject) => <option key={subject.id} value={subject.slug}>{subject.name}</option>)}
+          </Select>
+        </Field>
+        <Field label="Class type">
+          <Select name="classType" size="md" defaultValue={filters.classType ?? ""}>
+            <option value="">All types</option>
+            {Object.entries(CLASS_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </Select>
+        </Field>
+        <Field label="Owner">
+          <Select name="assignee" size="md" defaultValue={filters.assignee ?? ""}>
+            <option value="">Anyone</option>
+            <option value="unassigned">Unassigned</option>
+            {assignees.map((entry) => <option key={entry.userId} value={entry.userId}>{entry.userId === admin.userId ? "Me" : displayName(entry)}</option>)}
+          </Select>
+        </Field>
+        <Field label="Created from">
+          <input type="date" name="from" defaultValue={filters.from ?? ""} className={fieldClasses({ size: "md" })} />
+        </Field>
+        <Field label="Created to">
+          <input type="date" name="to" defaultValue={filters.to ?? ""} className={fieldClasses({ size: "md" })} />
+        </Field>
+      </FilterBar>
+
+      <ResultCount total={total} shown={leads.length} noun="lead" />
+      <DataTable label="Class leads" minWidth={1040}>
+        <thead>
+          <tr>
+            <th scope="col" className={cell.th}>Student</th>
+            <th scope="col" className={cell.th}>Request</th>
+            <th scope="col" className={cell.th}>Contact</th>
+            <th scope="col" className={cell.th}>Source</th>
+            <th scope="col" className={cell.th}>Status</th>
+            <th scope="col" className={cell.th}>Owner</th>
+            <th scope="col" className={cell.th}>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {leads.length ? leads.map((lead) => (
+            <tr key={lead.id} className="hover:bg-slate-50/70">
+              <td className={cell.td}>
+                <Link href={`/admin/classes/${lead.id}`} className="font-semibold text-slate-950 hover:text-brand-600 hover:underline">{lead.student_name}</Link>
+                <div className="mono-number text-[11px] text-slate-500">Ref {leadReference(lead.id)}</div>
+              </td>
+              <td className={cell.td}>
+                {lead.exam_type.toUpperCase()} · {lead.subject_name}{lead.topic ? ` · ${lead.topic}` : ""}
+                <div className="text-[11px] text-slate-500">{CLASS_TYPE_LABELS[lead.class_type]}</div>
+              </td>
+              <td className={cell.td}>
+                <span className="mono-number">{lead.phone}</span>
+                <div className="text-[11px] text-slate-500">Prefers {lead.preferred_contact_method}</div>
+              </td>
+              <td className={`${cell.td} text-[11.5px]`}>
+                {humanize(lead.source)}
+                <div className="text-slate-500">{humanize(lead.recommendation_reason)}</div>
+              </td>
+              <td className={cell.td}><LeadStatusBadge status={lead.status} /></td>
+              <td className={`${cell.td} text-[11.5px]`}>{lead.assigned_to ? owners.get(lead.assigned_to) ?? "Former admin" : <span className="text-slate-400">Unassigned</span>}</td>
+              <td className={`${cell.td} whitespace-nowrap`}>{formatDateTime(lead.created_at)}</td>
+            </tr>
+          )) : <EmptyRow colSpan={7}>No leads match these filters.</EmptyRow>}
+        </tbody>
+      </DataTable>
+      <Pagination page={page} pageCount={pageCount} hrefFor={(next) => hrefWith("/admin/classes", filters, { page: next })} />
+    </div>
+  );
 }

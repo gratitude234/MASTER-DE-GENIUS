@@ -134,6 +134,9 @@ export type Database = {
           previous_expires_at: string | null;
           new_tier: string | null;
           new_expires_at: string | null;
+          source: "payment" | "admin";
+          actor_id: string | null;
+          reason: string | null;
           created_at: string;
         };
         Insert: {
@@ -146,6 +149,9 @@ export type Database = {
           previous_expires_at?: string | null;
           new_tier?: string | null;
           new_expires_at?: string | null;
+          source?: "payment" | "admin";
+          actor_id?: string | null;
+          reason?: string | null;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["entitlement_events"]["Insert"]>;
@@ -926,9 +932,79 @@ export type Database = {
         Relationships: [];
       };
       app_admins: {
-        Row: { user_id: string; created_at: string };
-        Insert: { user_id: string; created_at?: string };
-        Update: { user_id?: string; created_at?: string };
+        Row: {
+          user_id: string; role: Database["public"]["Enums"]["admin_role"]; is_active: boolean;
+          granted_by: string | null; created_at: string; updated_at: string; deactivated_at: string | null;
+        };
+        Insert: {
+          user_id: string; role: Database["public"]["Enums"]["admin_role"]; is_active?: boolean;
+          granted_by?: string | null; created_at?: string; updated_at?: string; deactivated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["app_admins"]["Insert"]>;
+        Relationships: [];
+      };
+      admin_role_permissions: {
+        Row: { role: Database["public"]["Enums"]["admin_role"]; permission: string; created_at: string };
+        Insert: { role: Database["public"]["Enums"]["admin_role"]; permission: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["admin_role_permissions"]["Insert"]>;
+        Relationships: [];
+      };
+      admin_audit_log: {
+        Row: {
+          id: number; actor_id: string | null; actor_role: Database["public"]["Enums"]["admin_role"] | null;
+          action: string; entity_type: string; entity_id: string; reason: string | null;
+          before_state: Json | null; after_state: Json | null; created_at: string;
+        };
+        Insert: {
+          id?: number; actor_id?: string | null; actor_role?: Database["public"]["Enums"]["admin_role"] | null;
+          action: string; entity_type: string; entity_id: string; reason?: string | null;
+          before_state?: Json | null; after_state?: Json | null; created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["admin_audit_log"]["Insert"]>;
+        Relationships: [];
+      };
+      admin_internal_notes: {
+        Row: { id: string; entity_type: "class_lead" | "support_case"; entity_id: string; author_id: string | null; body: string; created_at: string };
+        Insert: { id?: string; entity_type: "class_lead" | "support_case"; entity_id: string; author_id?: string | null; body: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["admin_internal_notes"]["Insert"]>;
+        Relationships: [];
+      };
+      support_cases: {
+        Row: {
+          id: string; user_id: string | null;
+          category: "account" | "billing" | "academic" | "exam_session" | "classes" | "technical" | "other";
+          channel: "whatsapp" | "email" | "phone" | "in_app" | "other";
+          subject: string; message: string | null; status: "open" | "in_progress" | "resolved";
+          assigned_to: string | null; created_by: string | null; created_at: string; updated_at: string; resolved_at: string | null;
+        };
+        Insert: {
+          id?: string; user_id?: string | null;
+          category: "account" | "billing" | "academic" | "exam_session" | "classes" | "technical" | "other";
+          channel?: "whatsapp" | "email" | "phone" | "in_app" | "other";
+          subject: string; message?: string | null; status?: "open" | "in_progress" | "resolved";
+          assigned_to?: string | null; created_by?: string | null; created_at?: string; updated_at?: string; resolved_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["support_cases"]["Insert"]>;
+        Relationships: [];
+      };
+      question_blocks: {
+        Row: {
+          id: string; source_provider: string; exam_code: string; subject_slug: string; source_question_id: string;
+          reason: string; blocked_by: string | null; created_at: string;
+          lifted_at: string | null; lifted_by: string | null; lift_reason: string | null;
+        };
+        Insert: {
+          id?: string; source_provider: string; exam_code: string; subject_slug: string; source_question_id: string;
+          reason: string; blocked_by?: string | null; created_at?: string;
+          lifted_at?: string | null; lifted_by?: string | null; lift_reason?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["question_blocks"]["Insert"]>;
+        Relationships: [];
+      };
+      account_suspensions: {
+        Row: { user_id: string; reason: string; suspended_by: string | null; suspended_at: string };
+        Insert: { user_id: string; reason: string; suspended_by?: string | null; suspended_at?: string };
+        Update: Partial<Database["public"]["Tables"]["account_suspensions"]["Insert"]>;
         Relationships: [];
       };
       premium_class_leads: {
@@ -971,6 +1047,130 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      admin_grant_membership: {
+        Args: { p_actor_id: string; p_email: string; p_role: Database["public"]["Enums"]["admin_role"]; p_reason: string };
+        Returns: Json;
+      };
+      admin_update_membership: {
+        Args: { p_actor_id: string; p_user_id: string; p_role: Database["public"]["Enums"]["admin_role"] | null; p_is_active: boolean | null; p_reason: string };
+        Returns: Json;
+      };
+      admin_record_suspension: {
+        Args: { p_actor_id: string; p_user_id: string; p_reason: string };
+        Returns: Json;
+      };
+      admin_clear_suspension: {
+        Args: { p_actor_id: string; p_user_id: string; p_reason: string };
+        Returns: Json;
+      };
+      admin_grant_master_access: {
+        Args: { p_actor_id: string; p_user_id: string; p_days: number | null; p_expires_at: string | null; p_reason: string };
+        Returns: Json;
+      };
+      admin_update_class_lead: {
+        Args: {
+          p_actor_id: string; p_lead_id: string; p_status?: Database["public"]["Enums"]["class_lead_status"] | null;
+          p_update_assignment?: boolean; p_assigned_to?: string | null; p_note?: string | null;
+        };
+        Returns: Json;
+      };
+      admin_create_support_case: {
+        Args: {
+          p_actor_id: string; p_user_id: string | null; p_category: string; p_channel: string;
+          p_subject: string; p_message: string | null; p_assigned_to?: string | null;
+        };
+        Returns: string;
+      };
+      admin_update_support_case: {
+        Args: {
+          p_actor_id: string; p_case_id: string; p_status?: string | null;
+          p_update_assignment?: boolean; p_assigned_to?: string | null; p_note?: string | null;
+        };
+        Returns: Json;
+      };
+      admin_save_internal_question: {
+        Args: { p_actor_id: string; p_question_id: string | null; p_payload: Json; p_reason?: string | null };
+        Returns: string;
+      };
+      admin_set_question_status: {
+        Args: { p_actor_id: string; p_question_id: string; p_status: Database["public"]["Enums"]["question_status"]; p_reason?: string | null };
+        Returns: Json;
+      };
+      admin_block_question: {
+        Args: {
+          p_actor_id: string; p_source_provider: string; p_exam_code: string; p_subject_slug: string;
+          p_source_question_id: string; p_reason: string;
+        };
+        Returns: string;
+      };
+      admin_lift_question_block: {
+        Args: { p_actor_id: string; p_block_id: string; p_reason: string };
+        Returns: Json;
+      };
+      admin_finalize_overdue_session: {
+        Args: { p_actor_id: string; p_kind: "exam" | "practice"; p_session_id: string; p_reason: string };
+        Returns: Json;
+      };
+      admin_overview_metrics: {
+        Args: { p_actor_id: string };
+        Returns: Json;
+      };
+      admin_list_students: {
+        Args: {
+          p_actor_id: string; p_search?: string | null; p_exam?: string | null; p_plan?: string | null;
+          p_activity?: string | null; p_sort?: string; p_limit?: number; p_offset?: number;
+        };
+        Returns: {
+          user_id: string; full_name: string; email: string | null; exam_code: string | null; exam_year: number | null;
+          plan_tier: "free" | "master"; master_expires_at: string | null; subject_names: string[];
+          joined_at: string; last_session_at: string | null; finished_sessions: number;
+          onboarding_completed: boolean; is_suspended: boolean; total_count: number;
+        }[];
+      };
+      admin_list_sessions: {
+        Args: {
+          p_actor_id: string; p_kind?: string | null; p_state?: string | null; p_exam?: string | null;
+          p_subject_slug?: string | null; p_user_id?: string | null; p_search?: string | null;
+          p_from?: string | null; p_to?: string | null; p_limit?: number; p_offset?: number;
+        };
+        Returns: {
+          session_kind: "practice" | "exam"; session_id: string; user_id: string; student_name: string | null;
+          student_email: string | null; exam_code: string | null; session_type: "practice" | "timed" | "revision" | "mock";
+          subject_names: string | null; status: string; question_count: number; answered_count: number;
+          correct_count: number; source_provider: string; started_at: string | null; finished_at: string | null;
+          expires_at: string | null; total_count: number;
+        }[];
+      };
+      admin_academic_performance: {
+        Args: {
+          p_actor_id: string; p_exam_code?: string | null; p_subject_slug?: string | null;
+          p_since?: string | null; p_until?: string | null; p_min_attempts?: number;
+        };
+        Returns: Json;
+      };
+      admin_weekly_analytics: {
+        Args: { p_actor_id: string; p_weeks?: number };
+        Returns: Json;
+      };
+      admin_list_admins: {
+        Args: { p_actor_id: string };
+        Returns: {
+          user_id: string; email: string | null; full_name: string; role: Database["public"]["Enums"]["admin_role"];
+          is_active: boolean; granted_by_email: string | null; created_at: string; updated_at: string; deactivated_at: string | null;
+        }[];
+      };
+      admin_list_assignees: {
+        Args: { p_actor_id: string; p_permission: string };
+        Returns: { user_id: string; email: string | null; full_name: string }[];
+      };
+      admin_user_directory: {
+        Args: { p_actor_id: string; p_user_ids: string[] };
+        Returns: { user_id: string; email: string | null; full_name: string }[];
+      };
+      admin_search_users: {
+        Args: { p_actor_id: string; p_search: string; p_limit?: number };
+        Returns: { user_id: string; email: string | null; full_name: string }[];
+      };
       consume_rate_limit: {
         Args: { p_key: string; p_capacity: number; p_refill_per_second: number; p_cost?: number };
         Returns: { allowed: boolean; remaining: number; retry_after_seconds: number }[];
@@ -1270,6 +1470,7 @@ export type Database = {
       contact_method: "whatsapp" | "phone" | "email";
       class_recommendation_reason: "weak_topic" | "weak_subject" | "repeated_mistakes" | "student_requested";
       marketing_channel: "whatsapp" | "email";
+      admin_role: "super_admin" | "academic_admin" | "support_admin" | "classes_admin";
     };
     CompositeTypes: Record<string, never>;
   };

@@ -125,13 +125,7 @@ Submitting a specific request permits contact only about that request. Promotion
 
 There is no query-string admin bypass and no automated outbound message.
 
-To authorize an existing Supabase user, run this once with the correct auth user UUID:
-
-```sql
-insert into public.app_admins (user_id)
-values ('YOUR-AUTH-USER-UUID')
-on conflict (user_id) do nothing;
-```
+**Superseded by the Admin System.** CRM access is now a role, not a bare allowlist entry. Create the first Super Admin with `select public.bootstrap_first_super_admin('owner@example.com');` in the SQL editor, then add CRM staff as **Classes / CRM Admin** under `/admin/admins`. The old `insert into public.app_admins (user_id)` statement now fails on purpose. See [Admin System notes](ADMIN-SYSTEM-NOTES.md).
 
 ## WhatsApp configuration
 

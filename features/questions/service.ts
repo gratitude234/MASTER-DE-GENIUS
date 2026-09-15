@@ -1,5 +1,6 @@
 import "server-only";
 
+import { blockedSourceIds, loadBlockedQuestions, withoutBlockedQuestions } from "@/features/questions/blocks";
 import { toStudentQuestions } from "@/features/questions/delivery";
 import { QuestionProviderUnsupportedFilterError } from "@/features/questions/errors";
 import { getQuestionProvider } from "@/features/questions/providers";
@@ -56,7 +57,17 @@ export async function fetchCanonicalQuestions(
   const provider = getQuestionProvider(providerId);
   const validated = validateQuery(query);
   assertSupportedFilters(provider, validated);
-  return provider.fetchQuestions(validated);
+
+  // Admin-blocked external questions are skipped here, the single entry point
+  // both session engines share, so neither engine needed to change.
+  const blocked = await loadBlockedQuestions(validated.examBody, validated.subjectSlug);
+  const excluded = blockedSourceIds(blocked, provider.id);
+  const questions = await provider.fetchQuestions(
+    excluded.length
+      ? { ...validated, excludeSourceIds: [...(validated.excludeSourceIds ?? []), ...excluded] }
+      : validated,
+  );
+  return withoutBlockedQuestions(questions, blocked);
 }
 
 /**

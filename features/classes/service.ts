@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { CLASS_LEAD_STATUSES, type ClassLeadInput, type ClassLeadStatus, type ClassType } from "@/features/classes/types";
+import { CLASS_LEAD_STATUSES, CLASS_TYPES, type ClassLeadInput, type ClassLeadStatus, type ClassType } from "@/features/classes/types";
 
 export interface ClassCatalogueSubject { id: string; slug: string; name: string; topics: { slug: string; name: string }[] }
 
@@ -85,15 +85,28 @@ export async function latestLeadPhone(userId: string) {
   return data?.phone ?? "";
 }
 
-export async function isAppAdmin(userId: string) {
-  const db = createAdminClient();
-  const { data } = await db.from("app_admins").select("user_id").eq("user_id", userId).maybeSingle();
-  return Boolean(data);
+export interface AdminLeadFilters {
+  status?: string;
+  exam?: string;
+  subject?: string;
+  classType?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+  /** An admin's user id, or "unassigned". */
+  assignee?: string;
 }
 
-export interface AdminLeadFilters { status?: string; exam?: string; subject?: string; classType?: string; search?: string; from?: string }
-
 export const ADMIN_LEADS_PAGE_SIZE = 50;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CLASS_TYPE_SET = new Set<string>(CLASS_TYPES);
+const STATUS_SET = new Set<string>(CLASS_LEAD_STATUSES);
+
+/** Start of a calendar day in West Africa Time, where the CRM team works. */
+function watDay(date: string, offsetDays = 0) {
+  return new Date(Date.parse(`${date}T00:00:00+01:00`) + offsetDays * 86_400_000).toISOString();
+}
 
 /**
  * One round trip returns both the requested page and the exact filtered total,
@@ -103,20 +116,33 @@ export async function listAdminLeads(filters: AdminLeadFilters, page = 1) {
   const db = createAdminClient();
   const current = Math.max(1, Math.trunc(page) || 1);
   const start = (current - 1) * ADMIN_LEADS_PAGE_SIZE;
-  let query = db.from("premium_class_leads").select("*", { count: "exact" }).order("created_at", { ascending: false });
-  if (filters.status) query = query.eq("status", filters.status as ClassLeadStatus);
+  let query = db.from("premium_class_leads")
+    .select("id, user_id, student_name, exam_type, subject_slug, subject_name, topic, class_type, phone, email, preferred_contact_method, preferred_schedule, source, recommendation_reason, recent_accuracy, status, assigned_to, created_at, updated_at, contacted_at", { count: "exact" })
+    .order("created_at", { ascending: false });
+  if (filters.status && STATUS_SET.has(filters.status)) query = query.eq("status", filters.status as ClassLeadStatus);
   if (filters.exam === "jamb" || filters.exam === "waec") query = query.eq("exam_type", filters.exam);
-  if (filters.subject) query = query.eq("subject_slug", filters.subject);
-  if (filters.classType) query = query.eq("class_type", filters.classType as ClassType);
-  if (filters.from && /^\d{4}-\d{2}-\d{2}$/.test(filters.from)) query = query.gte("created_at", `${filters.from}T00:00:00.000Z`);
+  if (filters.subject && /^[a-z0-9-]+$/.test(filters.subject)) query = query.eq("subject_slug", filters.subject);
+  if (filters.classType && CLASS_TYPE_SET.has(filters.classType)) query = query.eq("class_type", filters.classType as ClassType);
+  if (filters.from && /^\d{4}-\d{2}-\d{2}$/.test(filters.from)) query = query.gte("created_at", watDay(filters.from));
+  if (filters.to && /^\d{4}-\d{2}-\d{2}$/.test(filters.to)) query = query.lt("created_at", watDay(filters.to, 1));
+  if (filters.assignee === "unassigned") query = query.is("assigned_to", null);
+  else if (filters.assignee && UUID.test(filters.assignee)) query = query.eq("assigned_to", filters.assignee);
   if (filters.search) {
-    const safe = filters.search.replace(/[%_,()]/g, "").slice(0, 80);
+    const safe = filters.search.replace(/[%_,()"\\]/g, "").slice(0, 80);
     if (safe) query = query.or(`student_name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`);
   }
   const { data, error, count } = await query.range(start, start + ADMIN_LEADS_PAGE_SIZE - 1);
   if (error) throw new Error("Could not load class leads.");
   const total = count ?? 0;
   return { leads: data, total, page: current, pageCount: Math.max(1, Math.ceil(total / ADMIN_LEADS_PAGE_SIZE)) };
+}
+
+/** Everything the lead workspace shows, including the CRM-only columns. */
+export async function loadAdminLead(id: string) {
+  if (!UUID.test(id)) return null;
+  const { data, error } = await createAdminClient().from("premium_class_leads").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error("Could not load the class lead.");
+  return data;
 }
 
 /**
@@ -134,11 +160,27 @@ export async function countLeadsByStatus(): Promise<Record<ClassLeadStatus, numb
   return Object.fromEntries(entries) as Record<ClassLeadStatus, number>;
 }
 
-export async function updateAdminLead(id: string, input: { status: ClassLeadStatus; notes: string | null }, adminId: string) {
-  const db = createAdminClient();
-  const now = new Date().toISOString();
-  const timestamps = input.status === "contacted" ? { contacted_at: now } : input.status === "enrolled" ? { enrolled_at: now } : ["closed", "not_interested"].includes(input.status) ? { closed_at: now } : {};
-  const { data, error } = await db.from("premium_class_leads").update({ status: input.status, admin_notes: input.notes, assigned_to: adminId, updated_at: now, ...timestamps }).eq("id", id).select("id, status").maybeSingle();
-  if (error || !data) throw new Error("Class lead not found.");
+export interface AdminLeadUpdate {
+  status?: ClassLeadStatus | null;
+  /** Present to change the assignee; null unassigns. Absent leaves it alone. */
+  assignedTo?: string | null;
+  note?: string | null;
+}
+
+/**
+ * Lifecycle, assignment and notes go through one audited database function.
+ * It re-checks the admin's permission, stamps first-contact, enrolment and
+ * closure times, appends the note privately, and writes the status history.
+ */
+export async function updateAdminLead(adminId: string, id: string, input: AdminLeadUpdate) {
+  const { data, error } = await createAdminClient().rpc("admin_update_class_lead", {
+    p_actor_id: adminId,
+    p_lead_id: id,
+    p_status: input.status ?? null,
+    p_update_assignment: input.assignedTo !== undefined,
+    p_assigned_to: input.assignedTo ?? null,
+    p_note: input.note?.trim() || null,
+  });
+  if (error) throw error;
   return data;
 }
