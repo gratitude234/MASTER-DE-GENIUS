@@ -9,7 +9,7 @@ import { Select } from "@/components/ui/select";
 import { buttonClasses, typography } from "@/components/ui/variants";
 import { mistakeBank } from "@/features/results/grading";
 import { loadHistory } from "@/features/results/service";
-import { requireOnboardedUser } from "@/lib/auth";
+import { getStudentProfile } from "@/features/profile/queries";
 import { cn } from "@/lib/utils";
 import { ClassHelpCard } from "@/components/classes/class-help-card";
 import { classRequestHref } from "@/features/classes/links";
@@ -22,9 +22,9 @@ const inlineLink =
   "inline-flex min-h-11 items-center gap-1.5 rounded text-[12.5px] font-bold text-brand-500 hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2";
 
 export default async function MistakesPage({ searchParams }: { searchParams: Promise<{ subject?: string; topic?: string; status?: string; page?: string }> }) {
-  const { user } = await requireOnboardedUser();
+  const { user, preference } = await getStudentProfile();
   const search = await searchParams;
-  const history = await loadHistory(user.id);
+  const history = (await loadHistory(user.id)).filter(result => result.examBodyId === preference.exam_body_id);
   const bank = mistakeBank(history);
   const mastered = search.status === "mastered";
   const subject = search.subject ?? "";
@@ -92,7 +92,7 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
             {revisionSubjects.map(([slug, name]) => (
               <RevisionButton
                 key={slug}
-                input={{ mistakes: true, subjectSlug: slug, ...(topic ? { topicSlug: topic } : {}) }}
+                input={{ examBody: preference.exam.code, mistakes: true, subjectSlug: slug, ...(topic ? { topicSlug: topic } : {}) }}
                 className={buttonClasses({ variant: "secondary", size: "sm", className: "h-[34px] rounded-full border-brand-200 text-xs text-brand-500 hover:bg-brand-100" })}
               >
                 {name}

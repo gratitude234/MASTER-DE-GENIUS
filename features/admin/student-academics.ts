@@ -34,7 +34,8 @@ export interface StudentAcademicSnapshot {
  * readiness or projected score is invented.
  */
 export function summariseStudentAcademics(history: LearningResult[], examBodyId?: string | null): StudentAcademicSnapshot {
-  const ordered = [...history].sort((a, b) => b.completedAt.localeCompare(a.completedAt) || a.id.localeCompare(b.id));
+  const scopedHistory = examBodyId ? history.filter(result => result.examBodyId === examBodyId) : history;
+  const ordered = [...scopedHistory].sort((a, b) => b.completedAt.localeCompare(a.completedAt) || a.id.localeCompare(b.id));
   const progress = summariseProgress(ordered);
   const recent = ordered.slice(0, 5);
   const recentQuestions = recent.reduce((sum, result) => sum + result.total, 0);

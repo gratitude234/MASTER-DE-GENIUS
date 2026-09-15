@@ -98,7 +98,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
                   {!row.onboarding_completed ? <Badge tone="warning">Onboarding incomplete</Badge> : null}
                 </div>
               </td>
-              <td className={cell.td}>{row.exam_code ? `${row.exam_code.toUpperCase()} ${row.exam_year ?? ""}` : "—"}</td>
+              <td className={cell.td}>{row.examLabels || "—"}</td>
               <td className={cell.td}>
                 <PlanBadge tier={row.plan_tier} />
                 {row.master_expires_at ? <div className="mt-1 text-[11px] text-slate-500">until {formatDate(row.master_expires_at)}</div> : null}

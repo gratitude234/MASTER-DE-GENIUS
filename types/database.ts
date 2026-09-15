@@ -897,6 +897,7 @@ export type Database = {
           intended_course: string | null;
           study_intensity: Database["public"]["Enums"]["study_intensity"];
           is_primary: boolean;
+          is_active: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -909,6 +910,7 @@ export type Database = {
           intended_course?: string | null;
           study_intensity?: Database["public"]["Enums"]["study_intensity"];
           is_primary?: boolean;
+          is_active?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -1047,6 +1049,7 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      save_exam_preparations: { Args: { p_configurations: Json; p_default_code: string }; Returns: undefined };
       admin_grant_membership: {
         Args: { p_actor_id: string; p_email: string; p_role: Database["public"]["Enums"]["admin_role"]; p_reason: string };
         Returns: Json;

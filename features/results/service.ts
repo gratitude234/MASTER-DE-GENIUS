@@ -1,3 +1,4 @@
+import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { grade, mistakeBank, outcome, type LearningResult, type ResultKind, type ReviewItem } from "./grading";
@@ -82,6 +83,7 @@ export async function loadHistory(userId: string): Promise<LearningResult[]> {
 }
 
 export interface RevisionInput {
+  examBody?: string;
   resultId?: string;
   kind?: ResultKind;
   subjectSlug: string;
@@ -92,7 +94,8 @@ export async function startRevision(userId: string, input: RevisionInput): Promi
   let items: ReviewItem[];
   let examBodyId: string;
   if (input.mistakes) {
-    const bank = mistakeBank(await loadHistory(userId)).filter(m => !m.mastered
+    const context = await resolveActiveExamContext(createAdminClient(), userId, input.examBody);
+    const bank = mistakeBank((await loadHistory(userId)).filter(result => result.examBodyId === context.exam_body_id)).filter(m => !m.mastered
       && m.item.question.subject.slug === input.subjectSlug
       && (!input.topicSlug || m.item.question.topic?.slug === input.topicSlug));
     if (!bank.length) throw new Error("No active mistakes match this subject and topic.");

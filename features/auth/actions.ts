@@ -1,6 +1,6 @@
 "use server";
 
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthActionState } from "@/features/auth/types";
@@ -33,6 +33,7 @@ export async function loginAction(_previous: AuthActionState, formData: FormData
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (!error) (await cookies()).delete("active-exam");
   if (error) return { error: "We couldn't sign you in with those details." };
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -131,5 +132,6 @@ export async function updatePasswordAction(_previous: AuthActionState, formData:
 export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
+  (await cookies()).delete("active-exam");
   redirect("/login");
 }

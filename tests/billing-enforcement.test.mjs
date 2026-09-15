@@ -52,6 +52,8 @@ registerHooks({
      * URL. The real NextResponse is used rather than a stand-in, so the status
      * codes and JSON bodies these tests assert on are the genuine article.
      */
+    if (specifier === '@/lib/supabase/admin') return stub('export function createAdminClient(){ return {}; }');
+    if (specifier === '@/features/exam-context/service') return stub('export async function resolveActiveExamContext(db, user, code){ return { exam: { code: code ?? "jamb" } }; }');
     if (specifier === 'next/server') {
       return { url: NEXT_SERVER_URL, shortCircuit: true };
     }

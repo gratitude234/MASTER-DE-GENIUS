@@ -1,3 +1,4 @@
+import { EXAM_ONBOARDING_RULES } from "@/features/onboarding/validation";
 import "server-only";
 
 import type { OnboardingExam, OnboardingExamCode, OnboardingSelection, OnboardingSubject } from "@/features/onboarding/types";
@@ -10,6 +11,7 @@ const EXAM_ORDER: OnboardingExamCode[] = ["jamb", "waec"];
 export async function getOnboardingCatalog(userId: string): Promise<{
   exams: OnboardingExam[];
   selection: OnboardingSelection;
+  selections: NonNullable<OnboardingSelection>[];
 }> {
   const supabase = await createClient();
   const { data: examRows, error: examError } = await supabase
@@ -79,32 +81,22 @@ export async function getOnboardingCatalog(userId: string): Promise<{
     } satisfies OnboardingExam];
   });
 
-  const { data: preference, error: preferenceError } = await supabase
-    .from("student_exam_preferences")
-    .select("id, exam_body_id, exam_year, target_score")
-    .eq("user_id", userId)
-    .eq("is_primary", true)
-    .maybeSingle();
-
-  if (preferenceError) throw new Error("Could not load your current examination setup.");
-  let selection: OnboardingSelection = null;
-  if (preference) {
-    const selectedExam = catalog.find((exam) => exam.id === preference.exam_body_id);
-    if (selectedExam) {
-      const { data: selectedSubjects, error: selectedError } = await supabase
-        .from("student_subject_preferences")
-        .select("subject_id, display_order")
-        .eq("preference_id", preference.id)
-        .order("display_order");
-      if (selectedError) throw new Error("Could not load your current subjects.");
-      selection = {
-        examCode: selectedExam.code,
-        examYear: preference.exam_year,
-        targetScore: preference.target_score ?? (selectedExam.code === "jamb" ? 280 : 70),
-        subjectIds: (selectedSubjects ?? []).map((item) => item.subject_id),
-      };
-    }
-  }
-
-  return { exams: catalog, selection };
+  const { data: preferences, error: preferenceError } = await supabase.from("student_exam_preferences")
+    .select("id, exam_body_id, exam_year, target_score, intended_course, study_intensity, is_primary")
+    .eq("user_id", userId).eq("is_active", true).order("is_primary", { ascending: false });
+  if (preferenceError) throw new Error("Could not load your examination setup.");
+  const ids = (preferences ?? []).map(preference => preference.id);
+  const { data: linksSelected, error: selectedError } = ids.length
+    ? await supabase.from("student_subject_preferences").select("preference_id, subject_id, display_order").in("preference_id", ids).order("display_order")
+    : { data: [], error: null };
+  if (selectedError) throw new Error("Could not load your subjects.");
+  const selections = (preferences ?? []).flatMap(preference => {
+    const exam = catalog.find(exam => exam.id === preference.exam_body_id);
+    return exam ? [{ examCode: exam.code, examYear: preference.exam_year,
+      targetScore: preference.target_score ?? EXAM_ONBOARDING_RULES[exam.code].targetDefault,
+      intendedCourse: preference.intended_course ?? "", studyIntensity: preference.study_intensity,
+      subjectIds: (linksSelected ?? []).filter(link => link.preference_id === preference.id).map(link => link.subject_id),
+    }] : [];
+  });
+  return { exams: catalog, selection: selections[0] ?? null, selections };
 }

@@ -29,6 +29,7 @@ export type PracticeTab = "practice" | "past";
 interface PracticeSetupProps {
   /** Which entry point is open. Mirrored in the URL as `?mode=past`. */
   tab: PracticeTab;
+  examCode: string;
   examName: string;
   examYear: number;
   subjects: PracticeCatalogSubject[];
@@ -83,6 +84,7 @@ export function practiceModeSummary(mode: PracticeMode, questionCount: number) {
 
 export function PracticeSetup({
   tab,
+  examCode,
   examName,
   examYear,
   subjects,
@@ -165,6 +167,7 @@ export function PracticeSetup({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          examBody: examCode,
           subjectSlug: activeSubject.slug,
           // Unsupported filters are never sent, on either tab.
           topicSlug: !isPast && capabilities.topics && topicSlug !== "all" ? topicSlug : null,

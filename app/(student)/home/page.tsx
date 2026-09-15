@@ -1,3 +1,5 @@
+import { getStudentExamPreferences } from "@/features/exam-context/service";
+import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Compass } from "lucide-react";
 import { ActiveExamCard } from "@/components/home/active-exam-card";
@@ -25,6 +27,7 @@ export default async function HomePage() {
   const activeExam = await getActiveExamAttemptSummaryForUser(user.id, preference?.exam_body_id);
   const history = await loadHistory(user.id);
 
+  const preparations = await getStudentExamPreferences(await createClient(), user.id);
   const examBodyId = preference?.exam_body_id;
   const scoped = history.filter((result) => result.examBodyId === examBodyId);
   const recent = scoped[0];
@@ -32,7 +35,7 @@ export default async function HomePage() {
   const recommendation = recommendPractice(history, examBodyId);
   const classRecommendation = recommendClass(history, examBodyId);
   const latestMock = latestMockSummary(history, examBodyId);
-  const activeMistakes = mistakeBank(history).filter((mistake) => !mistake.mastered).length;
+  const activeMistakes = mistakeBank(scoped).filter((mistake) => !mistake.mastered).length;
 
   const weakAreas = recent
     ? [...recent.topics]
@@ -59,6 +62,7 @@ export default async function HomePage() {
         rather than a date. Both chips stay hidden until a real value exists.
       */}
       <HomeHeader name={firstName} examLabel={examLabel} />
+      {preparations.length > 1 ? <p className="text-sm text-slate-600">You’re preparing for {preparations.map(item => item.exam.short_name).join(" & ")}. Showing {examBody?.short_name} progress.</p> : null}
 
       {activeExam ? <ActiveExamCard attempt={activeExam} /> : null}
 

@@ -15,7 +15,7 @@ registerHooks({
       return stub(`export function redirect(url){ const e = new Error('NEXT_REDIRECT'); e.digest = 'NEXT_REDIRECT;' + url; throw e; }`);
     }
     if (specifier === 'next/headers') {
-      return stub(`export async function headers(){ return new Map([['host','localhost:3000']]); }`);
+      return stub(`export async function cookies(){ return { delete(){} }; } export async function headers(){ return new Map([['host','localhost:3000']]); }`);
     }
     if (specifier === '@/lib/supabase/server') {
       return stub(`export const createClient = async () => globalThis.__authClient;`);

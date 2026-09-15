@@ -23,6 +23,8 @@ export type OnboardingSelection = {
   examYear: number;
   targetScore: number;
   subjectIds: string[];
+  intendedCourse?: string;
+  studyIntensity?: "light" | "moderate" | "intensive";
 } | null;
 
 export type OnboardingActionState = { error?: string };

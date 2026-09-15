@@ -1,3 +1,4 @@
+import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
 import { getRevisions } from "@/features/offline/server";
 
@@ -60,17 +61,8 @@ async function assertOnboardedUser(userId: string) {
   if (!data?.onboarding_completed) throw new Error("Finish onboarding before starting a mock exam.");
 }
 
-async function loadPrimaryPreference(userId: string) {
-  const admin = createAdminClient();
-  const { data: preference, error } = await admin
-    .from("student_exam_preferences")
-    .select("id, exam_body_id, exam_year")
-    .eq("user_id", userId)
-    .eq("is_primary", true)
-    .maybeSingle();
-
-  if (error || !preference) throw new Error("Your primary exam preference is not available.");
-  return preference;
+async function loadMockPreference(userId: string) {
+ return resolveActiveExamContext(createAdminClient(), userId, "jamb");
 }
 
 export async function getActiveExamAttemptSummaryForUser(
@@ -119,7 +111,7 @@ export async function getActiveExamAttemptSummaryForUser(
 export async function loadMockExamSetupForUser(userId: string): Promise<MockExamSetup> {
   await assertOnboardedUser(userId);
   const admin = createAdminClient();
-  const preference = await loadPrimaryPreference(userId);
+  const preference = await loadMockPreference(userId);
 
   const [{ data: exam, error: examError }, { data: blueprint, error: blueprintError }, { data: selectedLinks, error: linksError }] = await Promise.all([
     admin.from("exam_bodies").select("id, code, short_name").eq("id", preference.exam_body_id).eq("is_active", true).maybeSingle(),

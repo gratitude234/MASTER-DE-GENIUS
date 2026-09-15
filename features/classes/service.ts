@@ -1,3 +1,4 @@
+import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -40,6 +41,7 @@ async function authoritativeSubject(examType: "jamb" | "waec", slug: string) {
 }
 
 export async function createClassLead(userId: string, input: ClassLeadInput) {
+  await resolveActiveExamContext(createAdminClient(), userId, input.examType);
   const subject = await authoritativeSubject(input.examType, input.subjectSlug);
   const fingerprint = createHash("sha256").update(JSON.stringify([input.examType, subject.slug, input.topic?.toLowerCase() ?? null, input.classType, input.phone])).digest("hex");
   const db = createAdminClient();

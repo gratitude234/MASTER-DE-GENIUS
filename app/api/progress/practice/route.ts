@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       || (x.mistakes !== undefined && typeof x.mistakes !== "boolean")
       || (x.kind !== undefined && x.kind !== "exam" && x.kind !== "practice")
       || (x.resultId !== undefined && typeof x.resultId !== "string")) throw new Error("Invalid revision request.");
-    const sessionId = await startRevision(user.id, { subjectSlug: x.subjectSlug, topicSlug: x.topicSlug as string | undefined,
+    const sessionId = await startRevision(user.id, { examBody: typeof x.examBody === "string" ? x.examBody : undefined, subjectSlug: x.subjectSlug, topicSlug: x.topicSlug as string | undefined,
       mistakes: x.mistakes as boolean | undefined, kind: x.kind as "exam" | "practice" | undefined, resultId: x.resultId as string | undefined });
     return NextResponse.json({ sessionId }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {

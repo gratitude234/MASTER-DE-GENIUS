@@ -14,7 +14,8 @@
     "aloc:smoke": "node --experimental-transform-types scripts/aloc-smoke.mjs",
     "aloc-station:probe": "node --env-file=.env.local scripts/aloc-station-probe.mjs",
     "aloc-station:catalog": "node --env-file=.env.local scripts/aloc-station-catalog.mjs",
-    "gemini:probe": "node --env-file=.env.local --experimental-transform-types scripts/gemini-explanation-probe.mjs"
+    "gemini:probe": "node --env-file=.env.local --experimental-transform-types scripts/gemini-explanation-probe.mjs",
+    "test:offline": "node --experimental-transform-types --test --test-concurrency=1 tests/multi-exam.test.mjs tests/multi-exam-practice.test.mjs tests/multi-exam-ui.test.mjs tests/waec-activation.test.mjs tests/admin-logic.test.mjs tests/grading.test.mjs tests/auth-flow.test.mjs tests/auth-ui.test.mjs tests/home-dashboard.test.mjs tests/progress-ui.test.mjs tests/results-service.test.mjs tests/practice-setup.test.mjs tests/billing-enforcement.test.mjs tests/admin-database.test.mjs tests/billing-database.test.mjs tests/offline-database.test.mjs tests/offline-queue.test.mjs tests/practice-answer-security.test.mjs tests/engine-guard.test.mjs"
   },
   "dependencies": {
     "@google/genai": "2.21.0",

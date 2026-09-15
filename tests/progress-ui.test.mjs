@@ -20,10 +20,11 @@ registerHooks({
          export function notFound(){ throw new Error('NEXT_NOT_FOUND'); }`,
       );
     }
+    if (specifier === '@/features/profile/queries') return stub(`export async function getStudentProfile(){ return { user: { id: 'user-1' }, preference: { exam_body_id: 'jamb-id', exam: { code: 'jamb' } } }; }`);
     if (specifier === '@/lib/auth') {
       // The target-score lookup is the only query the result page makes itself.
       return stub(
-        `const chain = { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: globalThis.__preference ?? null }) };
+        `const chain = { select: () => chain, eq: () => chain, order: () => chain, limit: () => chain, maybeSingle: async () => ({ data: globalThis.__preference ?? null }) };
          export async function requireOnboardedUser(){
            return { user: { id: 'user-1' }, supabase: { from: () => chain } };
          }`,

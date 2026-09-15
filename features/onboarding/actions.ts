@@ -1,5 +1,6 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
@@ -43,5 +44,21 @@ export async function completeOnboardingAction(_previous: OnboardingActionState,
 
   revalidatePath("/home");
   revalidatePath("/me");
+  redirect("/home");
+}
+
+export async function saveExamPreparationsAction(_previous: OnboardingActionState, formData: FormData): Promise<OnboardingActionState> {
+  const { supabase } = await requireUser();
+  let configurations: Database["public"]["Functions"]["save_exam_preparations"]["Args"]["p_configurations"];
+  try {
+    configurations = JSON.parse(String(formData.get("configurations") ?? "[]"));
+    if (!Array.isArray(configurations) || configurations.length < 1 || configurations.length > 2) return { error: "Choose at least one exam." };
+  } catch { return { error: "Your examination setup is invalid." }; }
+  const { error } = await supabase.rpc("save_exam_preparations", {
+    p_configurations: configurations, p_default_code: String(formData.get("defaultCode") ?? ""),
+  });
+  if (error) return { error: error.message || "Could not save your preparation." };
+  (await cookies()).delete("active-exam");
+  revalidatePath("/", "layout");
   redirect("/home");
 }

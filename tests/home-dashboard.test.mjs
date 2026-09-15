@@ -22,6 +22,8 @@ registerHooks({
     if (specifier === 'next/navigation') {
       return stub(`export function useRouter(){ return { push(){} }; }`);
     }
+    if (specifier === '@/lib/supabase/server') return stub('export async function createClient(){ return {}; }');
+    if (specifier === '@/features/exam-context/service') return stub('export async function getStudentExamPreferences(){ return []; }');
     if (specifier === '@/features/profile/queries') {
       return stub(`export async function getStudentProfile(){ return globalThis.__profile; }`);
     }

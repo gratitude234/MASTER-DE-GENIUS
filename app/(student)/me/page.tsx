@@ -1,3 +1,5 @@
+import { getStudentExamPreferences } from "@/features/exam-context/service";
+import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Sparkles, Target } from "lucide-react";
 import { AppStatusRow } from "@/components/pwa/app-status-row";
@@ -12,6 +14,7 @@ export default async function MePage() {
   const { user, profile, preference, examBody, subjects } = await getStudentProfile();
   // The mobile tab bar has no room for a sixth entry, so Profile is where a
   // phone reaches billing. The desktop rail links it directly.
+  const preparations = await getStudentExamPreferences(await createClient(), user.id);
   const entitlement = await getEntitlement(user.id);
   const planExpiry = entitlement.isMaster && entitlement.expiresAt
     ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" }).format(new Date(entitlement.expiresAt))
@@ -25,6 +28,11 @@ export default async function MePage() {
     <div className="screen-enter mx-auto max-w-[560px] space-y-3.5">
       <div><h1 className={typography.h1}>Profile</h1><p className="mt-1 text-[12.5px] text-slate-500">Your MASTER@DE&apos;GENIUS account and preparation setup.</p></div>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+        <h2 className={typography.h2}>Your exams</h2>
+        {preparations.map(item => <p key={item.id} className="mt-2 text-sm">{item.exam.short_name} {item.exam_year}{item.is_primary ? " · Default" : ""}</p>)}
+        <Link href="/onboarding" className="mt-3 inline-flex min-h-11 items-center text-sm font-bold text-brand-500">Add or edit exams and change default</Link>
+      </section>
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         {/* The initials are a visual stand-in for the name announced beside them. */}
         <div className="flex items-center gap-3.5"><div aria-hidden="true" className="grid h-[52px] w-[52px] shrink-0 place-items-center rounded-full bg-brand-500 text-base font-bold text-white">{initials}</div><div className="min-w-0"><div className="truncate text-[15px] font-bold text-slate-950">{profile.full_name || "Student"}</div><div className="truncate text-[12.5px] text-slate-500">{user.email}</div></div></div>

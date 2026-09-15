@@ -1,9 +1,10 @@
+import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
 
 import { requireOnboardedUser } from "@/lib/auth";
 import type { PracticeCatalogSubject, PracticeCatalogTopic } from "@/features/questions/types";
 
-export async function getPracticeCatalog(): Promise<{
+export async function getPracticeCatalog(explicitCode?: string): Promise<{
   examCode: string;
   examBodyId: string;
   examName: string;
@@ -12,16 +13,7 @@ export async function getPracticeCatalog(): Promise<{
 }> {
   const { supabase, user } = await requireOnboardedUser();
 
-  const { data: preference, error: preferenceError } = await supabase
-    .from("student_exam_preferences")
-    .select("id, exam_body_id, exam_year")
-    .eq("user_id", user.id)
-    .eq("is_primary", true)
-    .maybeSingle();
-
-  if (preferenceError || !preference) {
-    throw new Error("Your primary exam preference is not available.");
-  }
+  const preference = await resolveActiveExamContext(supabase, user.id, explicitCode);
 
   const [{ data: exam, error: examError }, { data: selected, error: selectedError }] = await Promise.all([
     supabase

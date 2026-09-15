@@ -87,7 +87,14 @@ export default async function AdminStudentPage({ params }: { params: Promise<{ i
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="space-y-5">
-          <Panel title="Account and preparation">
+          <Panel title="All exam preparations">
+            {detail.preparations.map(item => <section key={item.examName} className="mb-4 rounded-lg border p-3">
+              <h3 className="font-bold">{item.examName} {item.examYear}{item.isDefault ? " · Default" : ""}</h3>
+              <p className="mt-1 text-sm">Target: {item.target ?? "—"} · {item.subjects.join(", ")}</p>
+              <p className="mt-2 text-sm">{item.academics ? `${item.academics.questions} questions · Accuracy: ${item.academics.accuracy ?? "—"}% · ${item.academics.activeMistakes} active mistakes` : "No academic summary available"}</p>
+            </section>)}
+          </Panel>
+          <Panel title="Account and default preparation">
             <DefinitionGrid
               columns={3}
               items={[
@@ -109,7 +116,7 @@ export default async function AdminStudentPage({ params }: { params: Promise<{ i
             ) : null}
           </Panel>
 
-          <Panel title="Academic snapshot" description="From the same graded results the student sees on their Progress page. Revision sets are included here, as they are there.">
+          <Panel title="Default exam academic snapshot" description="From the same graded results the student sees on their Progress page. Revision sets are included here, as they are there.">
             {academics ? (
               academics.practiceCount + academics.mockCount === 0 ? (
                 <p className="text-[13px] text-slate-600">No completed practice or mock yet.</p>

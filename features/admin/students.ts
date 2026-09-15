@@ -1,3 +1,4 @@
+import { getStudentExamPreferences } from "@/features/exam-context/service";
 import "server-only";
 
 import { can, type AdminContext } from "@/features/admin/auth";
@@ -36,7 +37,10 @@ export async function listStudents(actorId: string, filters: StudentFilters, pag
     p_offset: (page - 1) * STUDENT_PAGE_SIZE,
   });
   if (error) throw new Error("Could not load students.");
-  const rows = data ?? [];
+  const baseRows = data ?? [];
+  const { data: preferences } = baseRows.length ? await createAdminClient().from("student_exam_preferences").select("user_id, exam_year, exam_body_id, is_primary").in("user_id", baseRows.map(row => row.user_id)).eq("is_active", true) : { data: [] };
+  const { data: exams } = await createAdminClient().from("exam_bodies").select("id, short_name");
+  const rows = baseRows.map(row => ({ ...row, examLabels: (preferences ?? []).filter(item => item.user_id === row.user_id).map(item => `${exams?.find(exam => exam.id === item.exam_body_id)?.short_name ?? "Exam"} ${item.exam_year}${item.is_primary ? " (default)" : ""}`).join(" · ") }));
   const total = Number(rows[0]?.total_count ?? 0);
   return { rows, total, page, pageCount: Math.max(1, Math.ceil(total / STUDENT_PAGE_SIZE)) };
 }
@@ -63,6 +67,7 @@ export interface StudentDetail {
     lastSignInAt: string | null;
     onboardingCompleted: boolean;
   };
+  preparations: { examName: string; examYear: number; isDefault: boolean; target: number | null; subjects: string[]; academics: StudentAcademicSnapshot | null }[];
   preparation: {
     examCode: string;
     examName: string;
@@ -111,6 +116,15 @@ export async function loadStudentDetail(admin: AdminContext, userId: string): Pr
   ]);
   if (preferenceResult.error || eventsResult.error || suspensionResult.error) throw new Error("Could not load the student.");
 
+  const allPreferences = await getStudentExamPreferences(db, userId);
+  const preferenceIds = allPreferences.map(item => item.id);
+  const { data: allLinks } = preferenceIds.length ? await db.from("student_subject_preferences").select("preference_id, subject_id, display_order").in("preference_id", preferenceIds).order("display_order") : { data: [] };
+  const subjectIdsAll = [...new Set((allLinks ?? []).map(link => link.subject_id))];
+  const { data: allSubjects } = subjectIdsAll.length ? await db.from("subjects").select("id, name").in("id", subjectIdsAll) : { data: [] };
+  const preparations: StudentDetail["preparations"] = allPreferences.map(item => ({
+    examName: item.exam.short_name, examYear: item.exam_year, isDefault: item.is_primary, target: item.target_score, academics: null,
+    subjects: (allLinks ?? []).filter(link => link.preference_id === item.id).map(link => allSubjects?.find(subject => subject.id === link.subject_id)?.name ?? "Unknown"),
+  }));
   let preparation: StudentDetail["preparation"] = null;
   const preference = preferenceResult.data;
   if (preference) {
@@ -137,7 +151,9 @@ export async function loadStudentDetail(admin: AdminContext, userId: string): Pr
   let academics: StudentAcademicSnapshot | null = null;
   let academicsError: string | null = null;
   try {
-    academics = summariseStudentAcademics(await loadHistory(userId), preference?.exam_body_id);
+    const history = await loadHistory(userId);
+    academics = summariseStudentAcademics(history, preference?.exam_body_id);
+    preparations.forEach((item, index) => { item.academics = summariseStudentAcademics(history, allPreferences[index].exam_body_id); });
   } catch {
     academicsError = "Learning history could not be loaded right now.";
   }
@@ -172,6 +188,7 @@ export async function loadStudentDetail(admin: AdminContext, userId: string): Pr
       onboardingCompleted: profile.onboarding_completed,
     },
     preparation,
+    preparations,
     entitlement,
     entitlementActivatedAt: entitlementRow.data?.activated_at ?? null,
     entitlementEvents: events.map((event) => ({

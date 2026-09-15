@@ -15,6 +15,8 @@ export function parseCreatePracticeSessionInput(value: unknown): CreatePracticeS
   }
 
   const body = value as Record<string, unknown>;
+  const examBody = body.examBody;
+  if (examBody !== undefined && examBody !== "jamb" && examBody !== "waec") throw new Error("Choose a supported exam.");
   const subjectSlug = readString(body.subjectSlug);
   const topicSlugRaw = readString(body.topicSlug);
   const mode = readString(body.mode) as PracticeMode | null;
@@ -52,6 +54,7 @@ export function parseCreatePracticeSessionInput(value: unknown): CreatePracticeS
   }
 
   return {
+    ...(examBody ? { examBody } : {}),
     subjectSlug,
     topicSlug: topicSlugRaw && topicSlugRaw !== "all" ? topicSlugRaw : null,
     count,

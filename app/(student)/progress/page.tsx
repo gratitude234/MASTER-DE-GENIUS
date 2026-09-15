@@ -8,7 +8,7 @@ import { buttonClasses, typography } from "@/components/ui/variants";
 import { summariseProgress } from "@/features/progress/summary";
 import { mistakeBank } from "@/features/results/grading";
 import { loadHistory } from "@/features/results/service";
-import { requireOnboardedUser } from "@/lib/auth";
+import { getStudentProfile } from "@/features/profile/queries";
 import { cn } from "@/lib/utils";
 import { recommendClass } from "@/features/classes/recommendation";
 import { ClassHelpCard } from "@/components/classes/class-help-card";
@@ -24,8 +24,8 @@ const inlineLink =
   "inline-flex min-h-11 items-center gap-1.5 rounded text-[12.5px] font-bold text-brand-500 hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2";
 
 export default async function ProgressPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
-  const { user } = await requireOnboardedUser();
-  const history = await loadHistory(user.id);
+  const { user, preference } = await getStudentProfile();
+  const history = (await loadHistory(user.id)).filter(result => result.examBodyId === preference.exam_body_id);
   const bank = mistakeBank(history);
   const active = bank.filter(m => !m.mastered).length;
   const mastered = bank.filter(m => m.mastered).length;

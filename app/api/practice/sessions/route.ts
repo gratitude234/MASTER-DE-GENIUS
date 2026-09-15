@@ -1,3 +1,5 @@
+import { resolveActiveExamContext } from "@/features/exam-context/service";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
 import { planLimitResponse } from "@/features/billing/api";
@@ -15,6 +17,8 @@ export async function POST(request: Request) {
   let input;
   try {
     input = parseCreatePracticeSessionInput(await request.json());
+    const preference = await resolveActiveExamContext(createAdminClient(), user.id, input.examBody);
+    input.examBody = preference.exam.code as "jamb" | "waec";
   } catch (error) {
     return practiceErrorResponse(error);
   }
@@ -36,7 +40,7 @@ export async function POST(request: Request) {
   if (!reservation.allowed) return planLimitResponse("practice_session", reservation);
 
   const fingerprint = creationFingerprint([
-    input.subjectSlug, input.topicSlug, input.count, input.mode, input.difficulty, input.year,
+    input.examBody, input.subjectSlug, input.topicSlug, input.count, input.mode, input.difficulty, input.year,
   ]);
 
   const claim = await claimCreation(user.id, "practice", fingerprint);

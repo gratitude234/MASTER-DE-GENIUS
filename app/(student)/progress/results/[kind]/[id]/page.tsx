@@ -28,7 +28,7 @@ export default async function ResultPage({ params }: { params: Promise<{ kind: s
   if (kind !== "exam" && kind !== "practice") notFound();
   const result = await loadResult(user.id, kind, id);
   if (!result) notFound();
-  const { data: preference } = await supabase.from("student_exam_preferences").select("target_score").eq("user_id", user.id).eq("exam_body_id", result.examBodyId).eq("is_primary", true).maybeSingle();
+  const { data: preference } = await supabase.from("student_exam_preferences").select("target_score").eq("user_id", user.id).eq("exam_body_id", result.examBodyId).order("is_active", { ascending: false }).order("exam_year", { ascending: false }).limit(1).maybeSingle();
   const weak = [...result.topics].filter(t => t.topicSlug && t.accuracy < 70).sort((a, b) => a.accuracy - b.accuracy || b.total - a.total).slice(0, 3);
   const strong = [...result.subjects].sort((a, b) => b.accuracy - a.accuracy)[0];
   const subjectName = (slug: string) => result.subjects.find(s => s.subjectSlug === slug)?.name;

@@ -13,6 +13,7 @@ export type PracticeSessionStatus = "in_progress" | "completed" | "expired" | "a
 export type PracticeSaveState = "saved" | "saving" | "saved_local" | "syncing";
 
 export interface CreatePracticeSessionInput {
+  examBody?: "jamb" | "waec";
   subjectSlug: string;
   topicSlug?: string | null;
   count: number;

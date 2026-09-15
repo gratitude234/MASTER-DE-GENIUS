@@ -1,3 +1,4 @@
+import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
 import { getRevisions } from "@/features/offline/server";
 
@@ -57,14 +58,7 @@ async function assertOnboardedUser(userId: string) {
 async function resolvePracticeScope(userId: string, input: CreatePracticeSessionInput) {
   const admin = createAdminClient();
 
-  const { data: preference, error: prefError } = await admin
-    .from("student_exam_preferences")
-    .select("id, exam_body_id")
-    .eq("user_id", userId)
-    .eq("is_primary", true)
-    .maybeSingle();
-
-  if (prefError || !preference) throw new Error("Your primary exam preference is not available.");
+  const preference = await resolveActiveExamContext(admin, userId, input.examBody);
 
   const [{ data: exam, error: examError }, { data: subject, error: subjectError }] = await Promise.all([
     admin.from("exam_bodies").select("id, code").eq("id", preference.exam_body_id).eq("is_active", true).maybeSingle(),
@@ -313,7 +307,7 @@ export async function completePracticeSessionForUser(
   };
 }
 
-export async function getLatestActivePracticeSessionForUser(userId: string): Promise<{
+export async function getLatestActivePracticeSessionForUser(userId: string, examBodyId?: string): Promise<{
   id: string;
   subjectName: string;
   mode: PracticeMode;
@@ -325,6 +319,7 @@ export async function getLatestActivePracticeSessionForUser(userId: string): Pro
     .from("practice_sessions")
     .select("id, subject_id, mode, answered_count, question_count")
     .eq("user_id", userId)
+    .eq("exam_body_id", examBodyId ?? (await resolveActiveExamContext(admin, userId)).exam_body_id)
     .eq("status", "in_progress")
     .order("updated_at", { ascending: false })
     .limit(1)

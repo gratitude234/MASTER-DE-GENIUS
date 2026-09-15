@@ -42,6 +42,8 @@ export default async function PracticePage({
 
   return (
     <PracticeSetup
+      key={catalog.examCode}
+      examCode={catalog.examCode}
       tab={tab}
       examName={catalog.examName}
       examYear={catalog.examYear}
