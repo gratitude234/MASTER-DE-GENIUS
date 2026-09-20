@@ -61,6 +61,47 @@ export function parseReference(value: unknown): string | null {
   return /^[A-Za-z0-9_.-]+$/.test(trimmed) ? trimmed : null;
 }
 
+/** Collects every value a query key carries, whether it arrived once or many times. */
+function queryValues(value: string | string[] | undefined): string[] {
+  if (typeof value === "string") return [value.trim()];
+  if (Array.isArray(value)) return value.filter((entry) => typeof entry === "string").map((entry) => entry.trim());
+  return [];
+}
+
+/**
+ * The reference carried by a Paystack redirect.
+ *
+ * Paystack names the same value twice — `reference` and `trxref` — and appends
+ * both to whatever `callback_url` it was given, with `&`, never overwriting
+ * what is already there. A key can therefore legitimately arrive more than
+ * once, and Next.js hands a repeated key to the page as a `string[]` rather
+ * than a `string`. Reading `searchParams.reference` as if it were always a
+ * string is what produced "No payment to show" for payments that had in fact
+ * succeeded: the array failed `parseReference`'s type check before any lookup
+ * was attempted.
+ *
+ * So every value under either key is gathered and the distinct ones counted.
+ * Exactly one distinct value is the reference. None means the link carries no
+ * payment. Two or more is a contradiction — the two names are documented to
+ * hold the same value, so a disagreement is either a mangled redirect or a
+ * hand-built URL, and neither is something to resolve by picking a winner.
+ *
+ * Resolving a reference here is not authority for anything. It names a payment
+ * to look up; `reconcilePayment` still scopes that lookup to the authenticated
+ * student's own payments and still asks Paystack whether money actually moved.
+ */
+export function parseCallbackReference(
+  params: Record<string, string | string[] | undefined> | null | undefined,
+): string | null {
+  if (!params || typeof params !== "object") return null;
+
+  const distinct = new Set([...queryValues(params.reference), ...queryValues(params.trxref)]);
+  distinct.delete("");
+  if (distinct.size !== 1) return null;
+
+  return parseReference([...distinct][0]);
+}
+
 interface ApplyRow {
   outcome: string;
   expires_at: string | null;

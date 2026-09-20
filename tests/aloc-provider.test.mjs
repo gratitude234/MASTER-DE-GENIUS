@@ -145,7 +145,12 @@ test('QUESTION_PROVIDER=aloc resolves the ALOC provider; internal still works', 
     assert.ok(getQuestionProvider() instanceof AlocQuestionProvider);
     assert.equal(getQuestionProvider().id, 'aloc');
     assert.equal(getQuestionProvider('internal').id, 'internal');
-    assert.throws(() => getQuestionProvider('sdash'), /not implemented in this build/);
+    // sdash was a reserved, deliberately-throwing slot until WAEC science
+    // coverage landed. The registry guard it demonstrated still holds: an id
+    // this build does not implement fails loudly rather than resolving to
+    // something else.
+    assert.equal(getQuestionProvider('sdash').id, 'sdash');
+    assert.throws(() => getQuestionProvider('not_a_provider'), /not implemented in this build/);
   } finally {
     process.env.QUESTION_PROVIDER = previous;
   }

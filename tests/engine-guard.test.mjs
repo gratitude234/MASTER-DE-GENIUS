@@ -53,6 +53,13 @@ test('the guard covers every engine surface it claims to', () => {
     'features/practice/service.ts',
     'features/results/grading.ts',
     'app/api/exam/attempts/[attemptId]/submit/route.ts',
+    // Which provider serves an exam and subject decides what a frozen session
+    // contains, so the routing table and every adapter behind it are engine.
+    'features/questions/routing.ts',
+    'features/questions/providers/sdash/index.ts',
+    'features/questions/providers/sdash/mapping.ts',
+    'features/questions/providers/sdash/normalize.ts',
+    'features/questions/providers/sdash/transport.ts',
   ]) {
     assert.ok(covered.includes(required), `${required} must be guarded`);
   }

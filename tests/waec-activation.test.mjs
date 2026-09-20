@@ -35,10 +35,16 @@ test("WAEC catalogue and generic onboarding RPC enforce the new exam rules", asy
       where exam_bodies.code = 'waec'
       order by exam_subjects.display_order
     `)).rows.map((row) => row.slug);
-    assert.equal(rows.length, 11);
+    // Eleven ALOC Station subjects plus the four Sdash-backed sciences.
+    assert.equal(rows.length, 15);
     assert.ok(rows.includes("mathematics"));
     assert.ok(rows.includes("civic-education"));
-    assert.ok(!rows.includes("physics"), "unverified WAEC Physics must not be offered");
+    // Physics, and the other three sciences, became offerable once SdashAPI's
+    // WASSCE inventory for them was verified live. Anything still unverified
+    // stays out of the catalogue.
+    assert.deepEqual(rows.slice(0, 5), ["mathematics", "biology", "chemistry", "physics", "agricultural-science"]);
+    assert.ok(!rows.includes("use-of-english"), "WAEC English has no verified source yet");
+    assert.ok(!rows.includes("further-mathematics"), "WAEC Further Mathematics has no verified source yet");
 
     const ids = (await db.query("select id, slug from subjects where slug in ('mathematics', 'government')")).rows;
     const idBySlug = Object.fromEntries(ids.map((row) => [row.slug, row.id]));

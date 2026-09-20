@@ -112,8 +112,19 @@ export function parseCheckoutRequest(value: unknown): { planSlug: string } {
   return { planSlug: resolveCheckoutPlan((value as Record<string, unknown>).planSlug).slug };
 }
 
-export function checkoutCallbackUrl(base: string, reference: string): string {
-  return `${base.replace(/\/+$/, "")}/billing/callback?reference=${encodeURIComponent(reference)}`;
+/**
+ * Where Paystack sends the student back to.
+ *
+ * Deliberately carries no query string of its own. Paystack appends the
+ * transaction reference to whatever URL it is given — as `trxref` and
+ * `reference`, joined with `&`, never replacing what is already there — so a
+ * `?reference=` here arrived back as a second `reference` key, which Next.js
+ * parses as an array rather than a string. The reference it added was our own
+ * and therefore bought nothing: Paystack was always going to name the
+ * transaction on the way back.
+ */
+export function checkoutCallbackUrl(base: string): string {
+  return `${base.replace(/\/+$/, "")}/billing/callback`;
 }
 
 export async function startCheckout(
@@ -155,7 +166,7 @@ export async function startCheckout(
       email: params.email,
       amountKobo: opened.amountKobo,
       reference: opened.reference,
-      callbackUrl: checkoutCallbackUrl(deps.appUrl, opened.reference),
+      callbackUrl: checkoutCallbackUrl(deps.appUrl),
       planSlug: plan.slug,
     });
 

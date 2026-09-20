@@ -7,7 +7,10 @@ const stub=source=>({url:'data:text/javascript,'+encodeURIComponent(source),shor
 registerHooks({resolve(specifier,context,next){
  if(specifier==='next/headers') return stub('export async function cookies(){return {get(){return {value:"student:waec"}}}}');
  if(specifier==='@/lib/supabase/admin') return stub('export const createAdminClient=()=>globalThis.__multiDb');
- if(specifier==='@/features/questions/service') return stub(`export async function fetchCanonicalQuestions(query){globalThis.__query=query;return [{id:'q1',examBody:query.examBody,subject:{slug:'mathematics'},source:{provider:'internal',providerQuestionId:'q1'},prompt:'2 + 2?',options:[],assets:[],correctOptionKey:'A',explanation:'4'}];}`);
+ // The stub must carry every export the service under test imports, including
+ // the routing helper Practice uses to label the session row.
+ if(specifier==='@/features/questions/service') return stub(`export async function fetchCanonicalQuestions(query){globalThis.__query=query;return [{id:'q1',examBody:query.examBody,subject:{slug:'mathematics'},source:{provider:'internal',providerQuestionId:'q1'},prompt:'2 + 2?',options:[],assets:[],correctOptionKey:'A',explanation:'4'}];}
+ export function resolveQuestionProviderId(examBody,subjectSlug,explicit){globalThis.__resolved={examBody,subjectSlug};return explicit||'internal';}`);
  return next(specifier,context);
 }});
 const {createPracticeSessionForUser}=await import('../features/practice/service.ts');

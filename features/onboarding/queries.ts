@@ -2,6 +2,7 @@ import { EXAM_ONBOARDING_RULES } from "@/features/onboarding/validation";
 import "server-only";
 
 import type { OnboardingExam, OnboardingExamCode, OnboardingSelection, OnboardingSubject } from "@/features/onboarding/types";
+import { configuredQuestionProvider } from "@/features/questions/routing";
 import { isSubjectAvailable } from "@/features/questions/service";
 import { createClient } from "@/lib/supabase/server";
 
@@ -64,14 +65,17 @@ export async function getOnboardingCatalog(userId: string): Promise<{
 
     /*
      * An exam body that is active in the database but has no serveable subject
-     * is a deployment mistake, not a product decision — the active question
-     * provider cannot map it. It used to fail silently: the card simply greyed
-     * out, and the only way to notice was for someone to look at it. Saying so
-     * once, server-side, makes it findable in the deployment log instead.
+     * is a deployment mistake, not a product decision — no provider it routes
+     * to can map it, or none is configured. It used to fail silently: the card
+     * simply greyed out, and the only way to notice was for someone to look at
+     * it. Saying so once, server-side, makes it findable in the deployment log
+     * instead. Subject-level routing means the default is no longer the whole
+     * story, so the line names it as the default rather than as the provider.
      */
     if (!available && links?.some((link) => link.exam_body_id === exam.id)) {
       console.warn(
-        `[onboarding] ${code} is active but no subject is serveable by QUESTION_PROVIDER=${process.env.QUESTION_PROVIDER?.trim() || "internal"}`,
+        `[onboarding] ${code} is active but no subject resolves to a serveable provider ` +
+          `(default QUESTION_PROVIDER=${configuredQuestionProvider()})`,
       );
     }
 

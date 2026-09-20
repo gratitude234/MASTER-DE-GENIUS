@@ -6,7 +6,7 @@ registerAliasHook();
 
 const {
   normalizeAlocQuestion, normalizeOptionKey, normalizeOptions,
-  resolveAnswerKey, normalizePassage, cleanText,
+  resolveAnswerKey, normalizePassage, normalizeSection, cleanText,
 } = await import('../features/questions/providers/aloc/normalize.ts');
 const { toStudentQuestion } = await import('../features/questions/delivery.ts');
 
@@ -206,4 +206,125 @@ test('a payload without the flag still falls back to the length heuristic', () =
   const body = 'The rain had not stopped for three days, and the road had become a river of mud.';
   assert.ok(normalizePassage(body, undefined), 'unknown flag keeps the previous behaviour');
   assert.equal(normalizePassage('Choose the best option.', undefined), null);
+});
+
+test('REGRESSION: a section instruction is preserved instead of being discarded', () => {
+  // The live shape behind the orphaned "mischief" question: the task lived in
+  // `section`, hasPassage was 0, and the instruction used to be dropped entirely.
+  const instruction = 'In each of the following questions, choose the option opposite in meaning to the word given.';
+  const question = ok({
+    question: 'mischief',
+    option: { a: 'Christmas', b: 'ritual', c: 'goodness', d: 'Champagne' },
+    answer: 'c',
+    section: instruction,
+    hasPassage: 0,
+  });
+
+  assert.equal(question.instruction, instruction, 'the instruction must survive normalization');
+  assert.equal(question.passage, null, 'an instruction is never promoted into a passage');
+  assert.equal(question.prompt, 'mischief');
+});
+
+test('instruction wording observed across English sections is recognised', () => {
+  for (const instruction of [
+    'Choose the option nearest in meaning to the word given.',
+    'Choose the option opposite in meaning to the word given.',
+    'From the words lettered A to D, choose the word that best completes the sentence.',
+    'Complete each sentence with the most appropriate option.',
+    'In each of questions 1 to 10, choose the option that best completes the gap.',
+    'Choose the word that best completes the following sentence.',
+  ]) {
+    const section = normalizeSection(instruction);
+    assert.equal(section.instruction, instruction, `lost: ${instruction}`);
+    assert.equal(section.passage, null, `fabricated a passage from: ${instruction}`);
+  }
+});
+
+test('markup and entities are cleaned in an instruction exactly as elsewhere', () => {
+  const question = ok({ section: '<b>Choose the option nearest in meaning &amp; usage.</b>', hasPassage: 0 });
+  assert.equal(question.instruction, 'Choose the option nearest in meaning & usage.');
+});
+
+test('a real passage still arrives as a passage, with no instruction invented', () => {
+  const body = 'The rain had not stopped for three days, and the road to the market had become a river of mud that no lorry could cross.';
+  const question = ok({ section: { theme: 'Comprehension', passage: body }, hasPassage: 1 });
+  assert.equal(question.passage.body, body);
+  assert.equal(question.passage.title, 'Comprehension');
+  assert.equal(question.instruction, null, 'nothing may be invented to fill the instruction');
+});
+
+test('a section carrying both an instruction and a passage keeps both apart', () => {
+  const body = 'The rain had not stopped for three days, and the road to the market had become a river of mud.';
+  const question = ok({
+    section: { instruction: 'Read the passage and answer the question.', passage: body },
+    hasPassage: 1,
+  });
+  assert.equal(question.instruction, 'Read the passage and answer the question.');
+  assert.equal(question.passage.body, body);
+});
+
+test('SECURITY: the instruction reaches the student payload, the answer key still does not', () => {
+  const canonical = ok({
+    question: 'mischief',
+    section: 'Choose the option opposite in meaning to the word given.',
+    hasPassage: 0,
+    solution: 'The opposite of mischief is goodness.',
+  });
+  const student = toStudentQuestion(canonical);
+
+  assert.equal(student.instruction, 'Choose the option opposite in meaning to the word given.');
+  assert.equal('correctOptionKey' in student, false);
+  assert.equal('explanation' in student, false);
+  const serialized = JSON.stringify(student);
+  assert.equal(serialized.includes('correctOptionKey'), false);
+  assert.equal(serialized.includes('The opposite of mischief is goodness.'), false);
+});
+
+test('instruction recognition is not tied to the wording of one fixture', () => {
+  // Real papers phrase the same task many ways: the imperative is not always the
+  // first word, and the vocabulary varies between JAMB and WAEC sections.
+  for (const instruction of [
+    'For each of the following questions, select from the options lettered A to D the interpretation that is most appropriate to the sentence given.',
+    'From the alternatives provided, choose the one that best completes the sentence.',
+    'Select the option that is nearest in meaning to the word in italics.',
+    'Choose the most suitable answer from the alternatives below.',
+    'After each of the following sentences, a list of possible interpretations is given. Pick the interpretation you consider most appropriate.',
+    'In the following passage, the numbered gaps indicate missing words. Against each number in the list below, choose the most appropriate option.',
+    'From the words lettered A to D, choose the word that has the same vowel sound as the one represented by the letters underlined.',
+    'Answer the questions that follow each passage by choosing the most appropriate of the options lettered A to D.',
+    'Complete each of the following sentences with the most suitable alternative.',
+    'Fill in the gap with the option that is grammatically correct.',
+    'Indicate the option that has the same consonant sound as the one underlined.',
+    'Study the diagram carefully and answer the question that follows.',
+  ]) {
+    const section = normalizeSection(instruction);
+    assert.equal(section.instruction, instruction, `lost or misread: ${instruction}`);
+    assert.equal(section.passage, null, `fabricated a passage from: ${instruction}`);
+  }
+});
+
+test('prose is still a passage, including prose that happens to use task words', () => {
+  // The counter-test for the recogniser above: a rubric marker only counts when
+  // it opens a sentence or belongs to examination register, so narrative prose
+  // that merely contains "choose" or "the options" is untouched.
+  for (const body of [
+    'The rain had not stopped for three days, and the road to the market had become a river of mud that no lorry could cross before dawn.',
+    'He had to choose between two paths, and neither of them promised an easy journey home to the village where his mother waited.',
+    'She weighed the options carefully. Her father had always told her that a farmer who plants late will find the harvest thin.',
+    'Nigeria became a republic in 1963. Lagos remained the capital until 1991, when the seat of government moved to Abuja.',
+  ]) {
+    const section = normalizeSection(body);
+    assert.ok(section.passage, `passage preservation broke for: ${body.slice(0, 50)}`);
+    assert.equal(section.passage.body, body);
+    assert.equal(section.instruction, null);
+  }
+});
+
+test('a flagged passage is preserved even when it opens with a task word', () => {
+  // The provider's own flag stays authoritative, so no recogniser can ever
+  // demote real source material to a rubric.
+  const body = 'Read the letter again, he said, and tell me whether the writer meant to sell the land or merely to lease it for a season.';
+  const question = ok({ section: body, hasPassage: 1 });
+  assert.equal(question.passage.body, body);
+  assert.equal(question.instruction, null);
 });

@@ -3,7 +3,11 @@ import Link from "next/link";
 import { PaymentStatus } from "@/components/billing/payment-status";
 import { EmptyState } from "@/components/ui/empty-state";
 import { buttonClasses } from "@/components/ui/variants";
-import { reconcilePayment, type ReconcileResult } from "@/features/billing/reconcile";
+import {
+  parseCallbackReference,
+  reconcilePayment,
+  type ReconcileResult,
+} from "@/features/billing/reconcile";
 import { requireOnboardedUser } from "@/lib/auth";
 
 export const metadata = {
@@ -26,19 +30,23 @@ export const dynamic = "force-dynamic";
 export default async function BillingCallbackPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reference?: string; trxref?: string }>;
+  // A repeated query key arrives as an array, so the value type is the one
+  // Next.js actually provides rather than the narrower one this page wants.
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { user } = await requireOnboardedUser();
-  const params = await searchParams;
-  // Paystack sends `reference`; some flows also echo `trxref`. Either is only
-  // ever a lookup key.
-  const reference = params.reference ?? params.trxref ?? "";
+  // Paystack names the reference twice, as `reference` and `trxref`, and either
+  // may arrive more than once. Whatever shape it takes, it is only ever a
+  // lookup key — see `parseCallbackReference` for how the two are reconciled.
+  const reference = parseCallbackReference(await searchParams);
 
   let initial: ReconcileResult | null = null;
-  try {
-    initial = await reconcilePayment(user.id, reference);
-  } catch {
-    initial = null;
+  if (reference) {
+    try {
+      initial = await reconcilePayment(user.id, reference);
+    } catch {
+      initial = null;
+    }
   }
 
   if (!initial) {

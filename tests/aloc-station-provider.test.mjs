@@ -11,6 +11,7 @@ const { AlocStationQuestionProvider, STATION_RANDOM_BATCH_LIMIT } =
   await import('../features/questions/providers/aloc-station/index.ts');
 const { getQuestionProvider } = await import('../features/questions/providers/index.ts');
 const { QuestionProviderUnsupportedFilterError } = await import('../features/questions/errors.ts');
+const { normalizeStationQuestion } = await import('../features/questions/providers/aloc-station/normalize.ts');
 
 console.info = () => {};
 
@@ -102,4 +103,49 @@ test('the provider registry keeps legacy ALOC and Station independently selectab
   assert.equal(getQuestionProvider('aloc').id, 'aloc');
   assert.ok(getQuestionProvider('aloc_station') instanceof AlocStationQuestionProvider);
   assert.equal(getQuestionProvider('internal').id, 'internal');
+});
+
+test('Station section instructions are preserved as instructions, not passages', () => {
+  const instruction = 'From the words lettered A to D, choose the word opposite in meaning to the word given.';
+  const { question } = normalizeStationQuestion(
+    { id: 'station-70', text: 'mischief', section: instruction, hasPassage: 0, options: { a: 'Christmas', b: 'ritual', c: 'goodness', d: 'Champagne' }, correctAnswer: 'c' },
+    { examBody: 'waec', subjectSlug: 'use-of-english', subjectName: 'Use of English' },
+  );
+
+  assert.equal(question.instruction, instruction);
+  assert.equal(question.passage, null);
+  assert.equal(question.prompt, 'mischief');
+});
+
+test('Station keeps a real passage and an accompanying instruction apart', () => {
+  const body = 'The rain had not stopped for three days, and the road to the market had become a river of mud that no lorry could cross.';
+  const { question } = normalizeStationQuestion(
+    {
+      id: 'station-71',
+      questionHtml: '<p>According to the passage above, the road was</p>',
+      passage: body,
+      section: 'Read the passage and answer the question that follows.',
+      hasPassage: 1,
+      options: { a: 'dry', b: 'impassable', c: 'narrow', d: 'new' },
+      correctAnswer: 'b',
+    },
+    { examBody: 'waec', subjectSlug: 'use-of-english', subjectName: 'Use of English' },
+  );
+
+  assert.equal(question.passage.body, body);
+  assert.equal(question.instruction, 'Read the passage and answer the question that follows.');
+  assert.equal(question.prompt, 'According to the passage above, the road was');
+});
+
+test('Station provider-specific field names never escape the adapter', async () => {
+  const { provider } = upstream([[item(5, { section: 'Choose the option nearest in meaning to the word given.', difficultyLevel: 'easy' })]]);
+  const [question] = await provider.fetchQuestions({ examBody: 'jamb', subjectSlug: 'physics', count: 1 });
+
+  const serialized = JSON.stringify(question);
+  for (const providerField of ['section', 'questionHtml', 'hasPassage', 'correctAnswer', 'difficultyLevel', 'examType']) {
+    assert.equal(serialized.includes(`"${providerField}"`), false, `${providerField} leaked out of the adapter`);
+  }
+  assert.equal(question.instruction, 'Choose the option nearest in meaning to the word given.');
+  assert.equal(question.source.provider, 'aloc_station');
+  assert.equal(question.source.providerQuestionId, 'station-5');
 });

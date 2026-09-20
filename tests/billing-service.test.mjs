@@ -266,7 +266,7 @@ test('checkout sends Paystack the server price, in NGN, with a configured callba
   assert.equal(calls.initialized[0].email, 'student@example.invalid');
   assert.equal(
     calls.initialized[0].callbackUrl,
-    'https://app.example.invalid/billing/callback?reference=mdg_test_reference_1',
+    'https://app.example.invalid/billing/callback',
     'the callback host is configured, never taken from the request',
   );
   assert.equal(result.amountKobo, 350000);
@@ -367,9 +367,11 @@ test('the checkout route authenticates server-side and never trusts a request am
 });
 
 test('a checkout callback URL is built from the configured app URL', () => {
+  // No query string of its own: Paystack appends the reference to whatever it
+  // is given, so one here came back duplicated. See billing-callback.test.mjs.
   assert.equal(
-    checkoutCallbackUrl('https://app.example.invalid/', 'mdg_ref_1'),
-    'https://app.example.invalid/billing/callback?reference=mdg_ref_1',
+    checkoutCallbackUrl('https://app.example.invalid/'),
+    'https://app.example.invalid/billing/callback',
   );
   assert.equal(appUrl(), 'https://app.example.invalid');
 });

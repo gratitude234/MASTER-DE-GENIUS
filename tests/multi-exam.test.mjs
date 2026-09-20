@@ -69,7 +69,9 @@ test('atomic multi-exam onboarding, legacy compatibility, ownership and default 
  assert.deepEqual((await rows()).filter(p=>p.is_primary).map(p=>p.code),['waec'],'failed save must roll back default changes');
  await assert.rejects(save([jamb],'both'),/configured default/);
  await assert.rejects(save([{...jamb,subjectIds:waec.subjectIds}],'jamb'),/four/);
- await assert.rejects(save([{...waec,subjectIds:[id('physics')]}],'waec'),/not valid/);
+ // Use of English is the subject WAEC still has no verified source for; Physics
+ // joined the WAEC catalogue with the Sdash science coverage.
+ await assert.rejects(save([{...waec,subjectIds:[id('use-of-english')]}],'waec'),/not valid/);
  await assert.rejects(save([{...waec,examCode:'both'}],'both'),/not available/);
  await save([{...jamb,examYear:year+1},waec],'jamb');
  assert.equal((await rows()).length,2);

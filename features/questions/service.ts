@@ -6,8 +6,11 @@ import { QuestionProviderUnsupportedFilterError } from "@/features/questions/err
 import { checkQuestionIntegrity, type QuestionIntegrityReason } from "@/features/questions/integrity";
 import { getQuestionProvider } from "@/features/questions/providers";
 import type { QuestionProvider } from "@/features/questions/providers/types";
+import { resolveQuestionProviderId } from "@/features/questions/routing";
 import type { CanonicalQuestion, QuestionQuery, StudentQuestion } from "@/features/questions/types";
 import type { ExamBody } from "@/types/domain";
+
+export { resolveQuestionProviderId } from "@/features/questions/routing";
 
 const MAX_BATCH_SIZE = 100;
 
@@ -175,11 +178,29 @@ function reportIntegrityRejections(providerId: string, query: QuestionQuery, res
   );
 }
 
+/**
+ * The one place a provider instance is chosen for a request.
+ *
+ * `providerId` is an explicit override — tests, the admin diagnostics panel and
+ * the probe scripts pass one deliberately. Left out, the exam and subject decide
+ * through the verified routing table, falling back to the deployment's global
+ * `QUESTION_PROVIDER`. A session therefore uses exactly one provider for the
+ * whole subject: there is no fallback between providers, and a top-up round asks
+ * the same provider again.
+ */
+function resolveProvider(
+  examBody: ExamBody,
+  subjectSlug: string,
+  providerId?: string,
+): QuestionProvider {
+  return getQuestionProvider(resolveQuestionProviderId(examBody, subjectSlug, providerId));
+}
+
 export async function fetchCanonicalQuestions(
   query: QuestionQuery,
   providerId?: string,
 ): Promise<CanonicalQuestion[]> {
-  const provider = getQuestionProvider(providerId);
+  const provider = resolveProvider(query.examBody, query.subjectSlug, providerId);
   const validated = validateQuery(query);
   assertSupportedFilters(provider, validated);
 
@@ -216,6 +237,9 @@ export interface PracticeFilterCapabilities {
  * Safe capability metadata for a server component. It exposes only what the UI
  * needs to decide which controls to render — never the provider name, base URL
  * or credentials.
+ *
+ * Without an exam and subject this answers for the deployment's global provider,
+ * which is what it always meant and what the admin panel still wants.
  */
 export function getPracticeFilterCapabilities(providerId?: string): PracticeFilterCapabilities {
   const { years, topics, difficulty } = getQuestionProvider(providerId).capabilities;
@@ -223,18 +247,57 @@ export function getPracticeFilterCapabilities(providerId?: string): PracticeFilt
 }
 
 /**
- * Whether the active provider can serve this subject at all. A provider that
- * does not declare `supportsSubject` covers the whole catalogue.
+ * Capabilities per subject, because they are no longer a property of the
+ * deployment.
  *
- * The product uses this to avoid offering a subject that would only fail at
- * session creation — including a mapping deliberately held back for verification.
+ * WAEC Mathematics is served by ALOC Station, which can filter by year; WAEC
+ * Physics is served by Sdash, which on a Sandbox credential cannot. Offering one
+ * year control for the whole screen would either hide a filter that works or
+ * advertise one that does not, and a filter the resolved provider cannot honour
+ * must fail before a session is frozen rather than be quietly dropped.
+ *
+ * `fallback` is the global provider's answer, used for a subject the caller did
+ * not ask about.
+ */
+export interface PracticeSubjectCapabilities {
+  fallback: PracticeFilterCapabilities;
+  bySubject: Record<string, PracticeFilterCapabilities>;
+}
+
+export function getPracticeFilterCapabilitiesBySubject(
+  examBody: ExamBody,
+  subjectSlugs: string[],
+): PracticeSubjectCapabilities {
+  const bySubject: Record<string, PracticeFilterCapabilities> = {};
+  for (const slug of subjectSlugs) {
+    const { years, topics, difficulty } = resolveProvider(examBody, slug).capabilities;
+    bySubject[slug] = { years, topics, difficulty };
+  }
+  return { fallback: getPracticeFilterCapabilities(), bySubject };
+}
+
+/**
+ * Whether the provider resolved for this exam and subject can serve it at all.
+ *
+ * Two independent conditions, both required:
+ *
+ *   - the provider maps the subject (`supportsSubject`; omitting it means the
+ *     whole catalogue), and
+ *   - the deployment holds its credentials (`isConfigured`; omitting it means
+ *     "assume configured", preserving how the ALOC adapters have always behaved).
+ *
+ * The second matters because a routed subject is offered without anyone choosing
+ * its provider: on a deployment with no `SDASH_API_KEY` the four Sdash-backed
+ * WAEC subjects would otherwise be advertised and then fail at session creation.
+ * Both checks are pure lookups — no network call happens on a catalogue render.
  */
 export function isSubjectAvailable(
   examBody: ExamBody,
   subjectSlug: string,
   providerId?: string,
 ): boolean {
-  const provider = getQuestionProvider(providerId);
+  const provider = resolveProvider(examBody, subjectSlug, providerId);
+  if (provider.isConfigured?.() === false) return false;
   return provider.supportsSubject?.(examBody, subjectSlug) ?? true;
 }
 

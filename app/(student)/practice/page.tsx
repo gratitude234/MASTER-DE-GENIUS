@@ -1,7 +1,7 @@
 import { PracticeSetup, type PracticeTab } from "@/components/practice/practice-setup";
 import { recommendPractice, type PracticeRecommendation } from "@/features/home/recommendation";
 import { getPracticeCatalog } from "@/features/questions/catalog";
-import { getPracticeFilterCapabilities, unavailableSubjectSlugs } from "@/features/questions/service";
+import { getPracticeFilterCapabilitiesBySubject, unavailableSubjectSlugs } from "@/features/questions/service";
 import { getLatestActivePracticeSessionForUser } from "@/features/practice/service";
 import { loadHistory } from "@/features/results/service";
 import { requireOnboardedUser } from "@/lib/auth";
@@ -22,13 +22,17 @@ export default async function PracticePage({
     getLatestActivePracticeSessionForUser(user.id),
   ]);
 
-  // Only the filters and subjects the active question source can actually serve
-  // are offered, so a student is never sent into a session that cannot be built.
-  const capabilities = getPracticeFilterCapabilities();
-  const unavailableSubjects = unavailableSubjectSlugs(
-    catalog.examCode as ExamBody,
-    catalog.subjects.map((subject) => subject.slug),
-  );
+  /*
+   * Only the filters and subjects the resolved question source can actually
+   * serve are offered, so a student is never sent into a session that cannot be
+   * built. Capabilities are resolved per subject rather than per deployment:
+   * WAEC Mathematics and WAEC Physics are served by different providers, and
+   * one of them cannot filter by year.
+   */
+  const examCode = catalog.examCode as ExamBody;
+  const subjectSlugs = catalog.subjects.map((subject) => subject.slug);
+  const capabilities = getPracticeFilterCapabilitiesBySubject(examCode, subjectSlugs);
+  const unavailableSubjects = unavailableSubjectSlugs(examCode, subjectSlugs);
 
   /*
    * The same engine Home uses. Past Questions is browsed by year rather than by
@@ -48,7 +52,8 @@ export default async function PracticePage({
       examName={catalog.examName}
       examYear={catalog.examYear}
       subjects={catalog.subjects}
-      capabilities={capabilities}
+      capabilities={capabilities.fallback}
+      subjectCapabilities={capabilities.bySubject}
       unavailableSubjects={unavailableSubjects}
       resumeSession={activeSession}
       recommendation={recommendation}

@@ -20,7 +20,7 @@ export default async function AdminSystemPage() {
     <div className="space-y-5">
       <AdminPageHeader title="System" description="Configuration health and diagnostics. Secrets are never displayed — only whether they are set." />
 
-      <Panel id="providers" title="Question providers" description="Exactly one provider serves every new session, chosen by QUESTION_PROVIDER at deploy time. There is no automatic fallback between providers." bodyClassName="p-0">
+      <Panel id="providers" title="Question providers" description="QUESTION_PROVIDER chooses the provider for every exam and subject except those with a verified routing rule, listed under Coverage. Exactly one provider serves any single subject session, and there is no automatic fallback between providers." bodyClassName="p-0">
         {!active ? <p className="border-b border-slate-100 px-4 py-3 text-[12.5px] text-danger-700">QUESTION_PROVIDER is set to “{config.activeQuestionProvider}”, which this build does not implement. New sessions will fail to start.</p> : null}
         <DataTable label="Question providers" minWidth={1080}>
           <thead>

@@ -3,7 +3,7 @@ import "server-only";
 import { getRevisions } from "@/features/offline/server";
 
 import { toStudentQuestion } from "@/features/questions/delivery";
-import { fetchCanonicalQuestions } from "@/features/questions/service";
+import { fetchCanonicalQuestions, resolveQuestionProviderId } from "@/features/questions/service";
 import type { StudentQuestion } from "@/features/questions/types";
 import type {
   CompletePracticeSessionResult,
@@ -104,20 +104,24 @@ export async function createPracticeSessionForUser(
 ): Promise<{ sessionId: string; questionCount: number; requestedCount: number }> {
   await assertOnboardedUser(userId);
   const scope = await resolvePracticeScope(userId, input);
-  const provider = process.env.QUESTION_PROVIDER?.trim() || "internal";
+  /*
+   * No provider is forced on the question service: the exam and subject resolve
+   * it, so WAEC Biology reaches Sdash while WAEC Mathematics still reaches the
+   * deployment's configured source. Resolved here as well only to label the
+   * session row; every question also carries its own `sourceProvider`, which is
+   * what the engine, the blocklist and the admin inspector actually read.
+   */
+  const provider = resolveQuestionProviderId(scope.exam.code, scope.subject.slug);
 
-  const questions = await fetchCanonicalQuestions(
-    {
-      examBody: scope.exam.code,
-      subjectSlug: scope.subject.slug,
-      topicSlug: scope.topic?.slug ?? null,
-      year: input.year ?? null,
-      difficulty: input.difficulty ?? null,
-      count: input.count,
-      requestType: "practice",
-    },
-    provider,
-  );
+  const questions = await fetchCanonicalQuestions({
+    examBody: scope.exam.code,
+    subjectSlug: scope.subject.slug,
+    topicSlug: scope.topic?.slug ?? null,
+    year: input.year ?? null,
+    difficulty: input.difficulty ?? null,
+    count: input.count,
+    requestType: "practice",
+  });
 
   if (questions.length === 0) {
     throw new Error("No questions match this practice setup yet. Try another topic, year, or difficulty.");

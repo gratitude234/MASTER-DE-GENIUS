@@ -16,7 +16,7 @@ import { QuestionTabs } from "@/components/admin/question-tabs";
 
 export const dynamic = "force-dynamic";
 
-const PROVIDERS = [["aloc_station", "ALOC Station"], ["aloc", "ALOC (legacy)"]] as const;
+const PROVIDERS = [["aloc_station", "ALOC Station"], ["sdash", "Sdash"], ["aloc", "ALOC (legacy)"]] as const;
 
 export default async function ExternalQuestionsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const [admin, params] = await Promise.all([requireAdminPermission("questions.view"), searchParams]);

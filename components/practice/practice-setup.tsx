@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { CalendarRange, Clock3, Layers3, Lock, Sparkles } from "lucide-react";
 
 import { UpgradePrompt } from "@/components/billing/upgrade-prompt";
@@ -33,8 +33,20 @@ interface PracticeSetupProps {
   examName: string;
   examYear: number;
   subjects: PracticeCatalogSubject[];
+  /** The deployment default, used for a subject with no entry of its own. */
   capabilities: PracticeFilterCapabilities;
-  /** Slugs the active question source cannot serve. Never offered for selection. */
+  /**
+   * Filters each subject's own provider can honour.
+   *
+   * Providers are resolved per exam and subject, so one screen can hold two of
+   * them: WAEC Mathematics comes from a source that filters by year, WAEC
+   * Physics from one that (on the current plan) does not. Offering a single set
+   * of controls would either hide a filter that works or advertise one that
+   * does not — and an unhonourable filter fails session creation rather than
+   * being silently dropped, so the control must not be shown at all.
+   */
+  subjectCapabilities?: Record<string, PracticeFilterCapabilities>;
+  /** Slugs the resolved question source cannot serve. Never offered for selection. */
   unavailableSubjects: string[];
   /** Resolved server-side by the one shared recommendation engine. */
   recommendation: PracticeRecommendation;
@@ -88,7 +100,8 @@ export function PracticeSetup({
   examName,
   examYear,
   subjects,
-  capabilities,
+  capabilities: defaultCapabilities,
+  subjectCapabilities,
   unavailableSubjects,
   recommendation,
   prefillFromRecommendation,
@@ -102,6 +115,12 @@ export function PracticeSetup({
     [subjects, unavailable],
   );
 
+  /** What the provider behind one subject can filter by. */
+  const capabilitiesFor = useCallback(
+    (slug: string | undefined) => (slug && subjectCapabilities?.[slug]) || defaultCapabilities,
+    [subjectCapabilities, defaultCapabilities],
+  );
+
   /**
    * The recommendation is only usable if the provider can still serve it — a
    * subject can drop out of the catalogue between the attempt and now, and a
@@ -112,7 +131,8 @@ export function PracticeSetup({
     const subject = availableSubjects.find((item) => item.slug === recommendation.subjectSlug);
     if (!subject) return null;
 
-    if (recommendation.kind === "topic" && capabilities.topics) {
+    // The recommended subject's own provider decides, not the screen's default.
+    if (recommendation.kind === "topic" && capabilitiesFor(subject.slug).topics) {
       const topic = subject.topics.find((item) => item.slug === recommendation.topicSlug);
       if (topic) return { subject, topicSlug: topic.slug, label: recommendation.topicName };
     }
@@ -120,7 +140,7 @@ export function PracticeSetup({
     // Falls back to the whole subject: a topic the provider cannot filter by,
     // or one no longer in the catalogue, must not become a silent no-op filter.
     return { subject, topicSlug: "all", label: subject.name };
-  }, [recommendation, availableSubjects, capabilities.topics]);
+  }, [recommendation, availableSubjects, capabilitiesFor]);
 
   const [subjectSlug, setSubjectSlug] = useState(
     () => (prefillFromRecommendation ? prefill?.subject.slug : undefined) ?? availableSubjects[0]?.slug ?? "",
@@ -129,6 +149,8 @@ export function PracticeSetup({
     () => availableSubjects.find((subject) => subject.slug === subjectSlug) ?? availableSubjects[0],
     [subjectSlug, availableSubjects],
   );
+  /** Every control below follows the selected subject's provider. */
+  const capabilities = capabilitiesFor(activeSubject?.slug);
   const [topicSlug, setTopicSlug] = useState(
     () => (prefillFromRecommendation ? prefill?.topicSlug : undefined) ?? "all",
   );
@@ -145,7 +167,14 @@ export function PracticeSetup({
   const chooseSubject = (slug: string) => {
     if (unavailable.has(slug)) return;
     setSubjectSlug(slug);
+    // Every filter belongs to the subject it was chosen for. Two subjects on
+    // this screen can have different providers, so carrying a year or a
+    // difficulty across would leave a selection visible that the new subject's
+    // source cannot honour — and it would then be dropped on the way to the
+    // server, which is exactly the silent relaxation this product forbids.
     setTopicSlug("all");
+    setYear("all");
+    setDifficulty("mixed");
   };
 
   const applyRecommendation = () => {

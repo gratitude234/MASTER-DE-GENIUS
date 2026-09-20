@@ -3,6 +3,7 @@ import "server-only";
 import { getRevisions } from "@/features/offline/server";
 
 import { toStudentQuestion } from "@/features/questions/delivery";
+import { configuredQuestionProvider } from "@/features/questions/routing";
 import { fetchCanonicalQuestions, isSubjectAvailable } from "@/features/questions/service";
 import type { StudentQuestion } from "@/features/questions/types";
 import type {
@@ -146,8 +147,10 @@ export async function loadMockExamSetupForUser(userId: string): Promise<MockExam
       name: subject.name,
       displayOrder: link.display_order,
       questionCount: overrideBySubject.get(subject.id) ?? blueprint.default_question_count,
-      // Surfaced so the UI never offers a paper the active source cannot build.
-      available: isSubjectAvailable(asExamBody(exam.code), subject.slug, process.env.QUESTION_PROVIDER?.trim() || "internal"),
+      // Surfaced so the UI never offers a paper the resolved source cannot
+      // build. No provider is forced: each subject answers for the provider its
+      // exam and subject route to.
+      available: isSubjectAvailable(asExamBody(exam.code), subject.slug),
     };
   });
 
@@ -174,7 +177,14 @@ export async function createMockExamAttemptForUser(userId: string): Promise<Crea
     return { attemptId: setup.activeAttempt.id, resumed: true, totalQuestions: setup.activeAttempt.totalQuestions };
   }
 
-  const provider = process.env.QUESTION_PROVIDER?.trim() || "internal";
+  /*
+   * A mock paper spans several subjects, and after subject-level routing they
+   * need not share a provider. So no provider is forced on the question
+   * service — each subject resolves its own — and this value only labels the
+   * attempt row. Every question carries its own `sourceProvider`, which is what
+   * the blocklist and the admin inspector read.
+   */
+  const provider = configuredQuestionProvider();
   const questionBatches = await Promise.all(
     setup.subjects.map(async (subject) => {
       const questions = await fetchCanonicalQuestions({
@@ -182,7 +192,7 @@ export async function createMockExamAttemptForUser(userId: string): Promise<Crea
         subjectSlug: subject.slug,
         count: subject.questionCount,
         requestType: "mock",
-      }, provider);
+      });
 
       if (questions.length !== subject.questionCount) {
         throw new Error(`MOCK_INVENTORY_SHORTAGE|${subject.name}|${subject.questionCount}|${questions.length}`);

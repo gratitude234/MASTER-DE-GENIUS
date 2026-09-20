@@ -6,6 +6,7 @@ import { supportWhatsappNumber } from "@/features/classes/whatsapp";
 import { isQuarantinedSubject, quarantinedSubjectEntries, subjectMappingEntries } from "@/features/questions/providers/aloc/mapping";
 import { stationSubjectEntries } from "@/features/questions/providers/aloc-station/mapping";
 import { getQuestionProvider } from "@/features/questions/providers";
+import { verifiedRouteEntries } from "@/features/questions/routing";
 import type { ProviderCapabilities, QuestionProviderId } from "@/features/questions/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -77,7 +78,10 @@ export async function loadProviderStatuses(): Promise<ProviderStatus[]> {
   const stationWaec = stationSubjectEntries("waec").length;
   const quarantined = quarantinedSubjectEntries().map(([, subject]) => subject.name);
   const alocMapped = subjectMappingEntries().filter(([slug]) => !isQuarantinedSubject(slug)).length;
-  const stationUsage = await usageFor("aloc_station");
+  const sdashRoutes = verifiedRouteEntries()
+    .filter((route) => route.provider === "sdash")
+    .map((route) => `${route.examBody}/${route.subjectSlug}`);
+  const [stationUsage, sdashUsage] = await Promise.all([usageFor("aloc_station"), usageFor("sdash")]);
 
   return [
     {
@@ -123,15 +127,22 @@ export async function loadProviderStatuses(): Promise<ProviderStatus[]> {
     },
     {
       id: "sdash",
-      name: "SDash",
-      implemented: false,
+      name: "Sdash",
+      implemented: true,
+      // "Active" means "this deployment's global provider", which Sdash is not
+      // meant to be: it is reached through the verified exam+subject routing
+      // table instead, and `coverage` below is where that shows.
       active: active === "sdash",
-      configured: false,
-      configurationNote: "Reserved. Not implemented in this build.",
-      capabilities: null,
-      coverage: [],
-      usageTracked: false,
-      usage: null,
+      configured: Boolean(process.env.SDASH_API_KEY?.trim()),
+      configurationNote: process.env.SDASH_SANDBOX?.trim().toLowerCase() === "false"
+        ? "Requires SDASH_API_KEY on the server. Production plan declared (SDASH_SANDBOX=false)."
+        : "Requires SDASH_API_KEY on the server. Sandbox plan assumed: one examination year per subject, so year filtering is off.",
+      capabilities: capabilitiesOf("sdash"),
+      coverage: sdashRoutes.length
+        ? [`Routed WAEC subjects: ${sdashRoutes.join(", ")}`]
+        : ["No exam and subject currently route here"],
+      usageTracked: true,
+      usage: sdashUsage,
     },
   ];
 }

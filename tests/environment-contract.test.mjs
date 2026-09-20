@@ -18,12 +18,14 @@ import { join } from 'node:path';
 
 const TEMPLATE = '.env.example';
 
-/** Variables the template documents deliberately without reading them yet. */
-const RESERVED = new Set([
-  // Documented as "Future provider — NOT implemented", so its presence in the
-  // template is the point. Remove from here the moment it is wired up.
-  'SDASH_API_KEY',
-]);
+/**
+ * Variables the template documents deliberately without reading them yet.
+ *
+ * Empty since WAEC science coverage: `SDASH_API_KEY` used to sit here as a
+ * reserved placeholder and is now read by the Sdash adapter, so the ordinary
+ * rule applies to it again.
+ */
+const RESERVED = new Set([]);
 
 /** Without these the app cannot boot or take a payment, so they must be documented. */
 const REQUIRED = [
