@@ -85,7 +85,14 @@ export default async function ExternalQuestionsPage({ searchParams }: { searchPa
                   <span className="text-[11.5px] text-slate-500">Last served {formatDateTime(inspection.lastServedAt)}</span>
                 </div>
                 {inspection.question.passage?.body ? <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-[12px] text-slate-700">{inspection.question.passage.body}</p> : null}
+                {inspection.question.instruction ? <p className="whitespace-pre-wrap text-[12px] text-slate-600">{inspection.question.instruction}</p> : null}
                 <p className="whitespace-pre-wrap text-[13.5px] leading-6 text-slate-900">{inspection.question.prompt}</p>
+                {!inspection.integrity.valid ? (
+                  <InlineAlert tone="warning">
+                    This question is missing context a student needs ({inspection.integrity.reason}
+                    {inspection.integrity.detail ? `: ${inspection.integrity.detail}` : ""}). New sessions already skip it.
+                  </InlineAlert>
+                ) : null}
                 <ol className="space-y-1.5">
                   {inspection.question.options.map((option) => (
                     <li key={option.key} className={`rounded-lg border px-3 py-2 text-[12.5px] ${option.key === inspection.correctOptionKey ? "border-success-200 bg-success-50 text-success-700" : "border-slate-200"}`}>

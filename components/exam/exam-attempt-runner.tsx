@@ -435,6 +435,10 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
               </div>
             ) : null}
 
+            {question.instruction ? (
+              <p className="mb-2 whitespace-pre-line text-[13px] leading-[1.6] text-slate-600">{question.instruction}</p>
+            ) : null}
+
             <p className="text-[17px] font-semibold leading-[1.6] text-slate-950">{question.prompt}</p>
             <div className="mt-[22px] space-y-2.5">
               {question.options.map((option) => {

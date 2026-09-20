@@ -249,7 +249,11 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
           </div>
         ) : null}
 
-        <p className="mt-4 text-[17px] font-semibold leading-[1.55] text-slate-950">{question.prompt}</p>
+        {question.instruction ? (
+          <p className="mt-4 whitespace-pre-line text-[13px] leading-[1.6] text-slate-600">{question.instruction}</p>
+        ) : null}
+
+        <p className="mt-2 text-[17px] font-semibold leading-[1.55] text-slate-950">{question.prompt}</p>
 
         <div className="mt-4 space-y-2.5">
           {question.options.map((option) => {

@@ -37,6 +37,14 @@ export interface CanonicalQuestion {
   };
   topic?: Topic | null;
   year?: number | null;
+  /**
+   * Section-level instruction text — "Choose the option opposite in meaning to
+   * the word given." It is deliberately separate from `passage`: an instruction
+   * tells the student what to do, a passage is source material they must read.
+   * Nothing about it is secret, so it travels into the student snapshot beside
+   * the prompt it governs.
+   */
+  instruction?: string | null;
   prompt: string;
   passage?: QuestionPassage | null;
   assets: QuestionAsset[];

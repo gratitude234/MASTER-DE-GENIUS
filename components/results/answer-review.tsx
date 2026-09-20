@@ -111,6 +111,10 @@ export function AnswerReview({
                 </details>
               ) : null}
 
+              {item.question.instruction ? (
+                <p className="whitespace-pre-wrap text-[12.5px] leading-[1.6] text-slate-600">{item.question.instruction}</p>
+              ) : null}
+
               <p className="whitespace-pre-wrap text-sm font-semibold leading-[1.5] text-slate-950">{item.question.prompt}</p>
 
               {item.question.assets.map(asset => (

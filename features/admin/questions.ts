@@ -1,6 +1,7 @@
 import "server-only";
 
 import { displayName, loadDirectory } from "@/features/admin/directory";
+import { checkQuestionIntegrity, type QuestionIntegrityResult } from "@/features/questions/integrity";
 import type { StudentQuestion } from "@/features/questions/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
@@ -165,6 +166,12 @@ export interface ExternalQuestionInspection {
   explanation: string | null;
   lastServedAt: string;
   activeBlock: { id: string; reason: string; createdAt: string } | null;
+  /**
+   * The integrity verdict on the snapshot as it was served. A question frozen
+   * before the guard existed can still be incomplete, and this is where an
+   * operator investigating a student's complaint sees why.
+   */
+  integrity: QuestionIntegrityResult;
 }
 
 /**
@@ -197,8 +204,10 @@ export async function inspectExternalQuestion(key: ExternalQuestionKey): Promise
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
 
   if (!match) return null;
+  const snapshot = match.student_snapshot as unknown as StudentQuestion;
   return {
-    question: match.student_snapshot as unknown as StudentQuestion,
+    question: snapshot,
+    integrity: checkQuestionIntegrity(snapshot),
     correctOptionKey: match.correct_option_key,
     explanation: match.explanation,
     lastServedAt: match.created_at,

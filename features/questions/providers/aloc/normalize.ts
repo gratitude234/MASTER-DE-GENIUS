@@ -176,31 +176,134 @@ function stableHash(value: string): string {
 }
 
 /**
+ * Whether section text is a rubric addressed to the student rather than source
+ * material they must read.
+ *
+ * Two independent markers, because real papers phrase the same task many ways
+ * and a list of whole sentences would only ever recognise the fixtures it was
+ * written from:
+ *
+ *   1. a task verb opening a sentence — "Choose the option…", and equally
+ *      "…to the sentence given. Select from the options…", which a text-start
+ *      anchor would miss;
+ *   2. examination register — wording that appears in a rubric and effectively
+ *      never in narrative prose ("nearest in meaning", "options lettered A to D",
+ *      "from the alternatives provided", "most appropriate").
+ *
+ * Deliberately a recogniser, not a classifier that guesses: text matching
+ * nothing is left to the length rule, so an unrecognised rubric is still shown
+ * to the student as a passage rather than discarded. Nothing is ever written.
+ */
+const TASK_VERBS =
+  "choose|select|pick|indicate|complete|fill|read|study|use|answer|identify|rewrite|arrange|underline|circle|state|supply|give|write|insert|replace|match|group|find|attempt";
+
+/**
+ * A task verb that opens the text or a later sentence. Anchoring to a sentence
+ * boundary is what keeps ordinary prose out: "He had to choose between two
+ * paths" never matches, because "choose" is mid-sentence there.
+ */
+const IMPERATIVE_OPENING = new RegExp(`(?:^|[.;:?!\\n]\\s+)(?:${TASK_VERBS})\\b`, "i");
+
+/** Examination register. Each phrase was chosen for being absent from prose. */
+const INSTRUCTION_PHRASES: RegExp[] = [
+  /\b(?:in|for|after|from) each of (?:the )?(?:following |these )?(?:questions?|sentences?|items?|words?)\b/i,
+  /\b(?:in|for) questions? \d+\s*(?:to|-|–|and)\s*\d+/i,
+  /\b(?:nearest|closest|opposite|similar|same|equivalent) in meaning\b/i,
+  /\bmost (?:appropriate|suitable|nearly|closely)\b/i,
+  /\bbest (?:completes|suits|explains|interprets|conveys|describes)\b/i,
+  /\bfrom the (?:words?|options?|alternatives?|list|letters?)\b/i,
+  /\b(?:options?|alternatives?|words?|letters?|answers?) lettered\b/i,
+  /\balternatives? (?:provided|given|below|above|listed)\b/i,
+  /\blettered [a-e]\s*(?:to|-|–)\s*[a-e]\b/i,
+  /\bfill in the (?:gap|blank)/i,
+  /\bunderlined? (?:word|expression|phrase|portion|part|group|sentence)/i,
+  /\bin italics\b|\bitalici[sz]ed\b/i,
+  /\bchoose the (?:option|word|answer|expression|one|interpretation|alternative)\b/i,
+  /\bpossible interpretations\b/i,
+  /\bnumbered gaps?\b/i,
+];
+
+/**
+ * Instructions are short; comprehension passages are not. The ceiling keeps a
+ * block that opens with "Read the passage below…" and then carries the passage
+ * itself from being mistaken for a bare instruction line — the source material
+ * matters more than the rubric, so when both share one field the passage wins.
+ */
+const MAX_INSTRUCTION_LENGTH = 300;
+
+/** Below this, text is too short to be a comprehension passage. */
+const MIN_PASSAGE_LENGTH = 40;
+
+function looksLikeInstruction(text: string): boolean {
+  if (text.length > MAX_INSTRUCTION_LENGTH) return false;
+  return IMPERATIVE_OPENING.test(text) || INSTRUCTION_PHRASES.some((pattern) => pattern.test(text));
+}
+
+export interface SectionContext {
+  /** Task text shown above the prompt. Never source material. */
+  instruction: string | null;
+  /** Genuine source material the prompt quotes. */
+  passage: QuestionPassage | null;
+}
+
+/**
  * `section` is not a passage field. Live responses put instruction text in it for
  * most English questions ("In each of questions 86 to 100, choose the option
- * opposite in meaning to the underlined word(s)."), and only comprehension
- * questions carry `hasPassage: 1`. Trusting length alone rendered instruction
- * lines as passages, which is fabricated content; the flag is authoritative when
- * present, and the length heuristic only applies when the field is absent.
+ * opposite in meaning to the word(s)."), and only comprehension questions carry
+ * `hasPassage: 1`.
+ *
+ * Both concepts are preserved rather than one being discarded. Previously an
+ * instruction was recognised and then thrown away, which is what turned
+ * "choose the option opposite in meaning …" + "mischief" into a bare, unanswerable
+ * "mischief". Classification is deterministic:
+ *
+ *   - `hasPassage` truthy  → a real passage (the provider's own flag is authoritative)
+ *   - `hasPassage` falsy   → the provider says this is not source material, so it is an instruction
+ *   - flag absent          → instruction-shaped text is an instruction, otherwise
+ *                            long text is a passage and short text is discarded
+ *
+ * Nothing is invented: text is only classified, never written.
  */
-export function normalizePassage(raw: unknown, hasPassage?: unknown): QuestionPassage | null {
-  if (hasPassage !== undefined && !Number(hasPassage)) return null;
-
+export function normalizeSection(raw: unknown, hasPassage?: unknown): SectionContext {
   let title: string | null = null;
   let body = "";
+  let declaredInstruction = "";
 
-  if (typeof raw === "string") {
+  if (typeof raw === "string" || typeof raw === "number") {
     body = cleanText(raw);
   } else if (raw && typeof raw === "object") {
     const record = raw as Record<string, unknown>;
-    body = cleanText(record.passage ?? record.content ?? record.body ?? record.text ?? record.instruction);
+    body = cleanText(record.passage ?? record.content ?? record.body ?? record.text);
+    declaredInstruction = cleanText(record.instruction);
     title = cleanText(record.theme ?? record.title ?? record.name) || null;
+    // An object carrying only an instruction field still has usable context.
+    if (!body && declaredInstruction) return { instruction: declaredInstruction, passage: null };
   }
 
-  // Fallback for a payload without the flag: a bare instruction line is not a
-  // comprehension passage, and inventing one would put fabricated content on screen.
-  if (!body || body.length < 40) return null;
-  return { id: `aloc:passage:${stableHash(body)}`, title, body };
+  const instructionOnly = (text: string): SectionContext => ({
+    instruction: declaredInstruction || text || null,
+    passage: null,
+  });
+
+  if (!body) return instructionOnly("");
+
+  if (hasPassage !== undefined) {
+    if (!Number(hasPassage)) return instructionOnly(body);
+    return body.length < MIN_PASSAGE_LENGTH
+      ? instructionOnly(body)
+      : { instruction: declaredInstruction || null, passage: { id: `aloc:passage:${stableHash(body)}`, title, body } };
+  }
+
+  // No flag: a bare instruction line is not a comprehension passage, and
+  // inventing one would put fabricated content on screen.
+  if (looksLikeInstruction(body)) return instructionOnly(body);
+  if (body.length < MIN_PASSAGE_LENGTH) return { instruction: declaredInstruction || null, passage: null };
+  return { instruction: declaredInstruction || null, passage: { id: `aloc:passage:${stableHash(body)}`, title, body } };
+}
+
+/** Kept for callers that only need the passage half of the classification. */
+export function normalizePassage(raw: unknown, hasPassage?: unknown): QuestionPassage | null {
+  return normalizeSection(raw, hasPassage).passage;
 }
 
 function normalizeYear(raw: unknown): number | null {
@@ -242,6 +345,8 @@ export function normalizeAlocQuestion(raw: unknown, context: NormalizeContext): 
   const correctOptionKey = resolveAnswerKey(record.answer, options);
   if (!correctOptionKey) return { discarded: "unresolved_answer" };
 
+  const section = normalizeSection(record.section, record.hasPassage);
+
   return {
     question: {
       id: `aloc:${context.subjectSlug}:${providerQuestionId}`,
@@ -250,8 +355,9 @@ export function normalizeAlocQuestion(raw: unknown, context: NormalizeContext): 
       subject: { id: context.subjectSlug, slug: context.subjectSlug, name: context.subjectName },
       topic: null,
       year: normalizeYear(record.examyear),
+      instruction: section.instruction,
       prompt,
-      passage: normalizePassage(record.section, record.hasPassage),
+      passage: section.passage,
       assets: normalizeAssets(record.image, providerQuestionId),
       options,
       correctOptionKey,

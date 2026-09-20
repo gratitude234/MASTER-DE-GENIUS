@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { CanonicalQuestion } from "@/features/questions/types";
-import { cleanText, normalizeOptions, normalizePassage, resolveAnswerKey } from "@/features/questions/providers/aloc/normalize";
+import { cleanText, normalizeOptions, normalizeSection, resolveAnswerKey, type SectionContext } from "@/features/questions/providers/aloc/normalize";
 import type { ExamBody, QuestionAsset, QuestionDifficulty } from "@/types/domain";
 
 export interface StationNormalizeContext {
@@ -41,6 +41,36 @@ function normalizeAssets(raw: unknown, questionId: string): QuestionAsset[] {
   });
 }
 
+/**
+ * Station carries context in two different fields and they do not mean the same
+ * thing. `passage` is its dedicated comprehension field; `section` is inherited
+ * from the legacy ALOC shape and holds instruction text at least as often as
+ * source material. Keeping them apart is what stops "Choose the option opposite
+ * in meaning…" from being dropped or, worse, rendered as a passage.
+ *
+ * Provider field names stop here: everything above the adapter sees only
+ * `instruction` and `passage`.
+ */
+function normalizeStationContext(record: Record<string, unknown>): SectionContext {
+  const declared = cleanText(record.instruction ?? record.sectionInstruction ?? record.directive);
+  const hasPassageFlag = record.hasPassage;
+
+  // An explicit passage field is authoritative: Station only populates it for
+  // real source material, so any section text beside it is the instruction.
+  const passageField = record.passage;
+  if (passageField != null && passageField !== "") {
+    const fromPassage = normalizeSection(passageField, hasPassageFlag ?? 1);
+    const fromSection = normalizeSection(record.section, 0);
+    return {
+      instruction: declared || fromPassage.instruction || fromSection.instruction,
+      passage: fromPassage.passage,
+    };
+  }
+
+  const fromSection = normalizeSection(record.section, hasPassageFlag);
+  return { instruction: declared || fromSection.instruction, passage: fromSection.passage };
+}
+
 export function normalizeStationQuestion(
   raw: unknown,
   context: StationNormalizeContext,
@@ -55,6 +85,8 @@ export function normalizeStationQuestion(
   const prompt = cleanText(record.text ?? record.questionHtml ?? record.question);
   if (!prompt) return { discarded: "empty_prompt" };
 
+  const material = normalizeStationContext(record);
+
   const normalized = normalizeOptions(record.options ?? record.option, providerQuestionId);
   if (normalized.error) return { discarded: normalized.error };
   const correctOptionKey = resolveAnswerKey(record.correctAnswer ?? record.answer, normalized.options);
@@ -68,8 +100,9 @@ export function normalizeStationQuestion(
       subject: { id: context.subjectSlug, slug: context.subjectSlug, name: context.subjectName },
       topic: null,
       year: normalizeYear(record.year ?? record.examYear),
+      instruction: material.instruction,
       prompt,
-      passage: normalizePassage(record.section ?? record.passage, record.hasPassage),
+      passage: material.passage,
       assets: normalizeAssets(record.assets ?? record.image, providerQuestionId),
       options: normalized.options.map((option) => ({ ...option, id: `aloc-station:${providerQuestionId}:${option.key}` })),
       correctOptionKey,

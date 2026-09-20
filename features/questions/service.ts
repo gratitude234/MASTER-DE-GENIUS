@@ -1,8 +1,9 @@
 import "server-only";
 
-import { blockedSourceIds, loadBlockedQuestions, withoutBlockedQuestions } from "@/features/questions/blocks";
+import { blockedSourceIds, loadBlockedQuestions, withoutBlockedQuestions, type BlockedQuestion } from "@/features/questions/blocks";
 import { toStudentQuestions } from "@/features/questions/delivery";
 import { QuestionProviderUnsupportedFilterError } from "@/features/questions/errors";
+import { checkQuestionIntegrity, type QuestionIntegrityReason } from "@/features/questions/integrity";
 import { getQuestionProvider } from "@/features/questions/providers";
 import type { QuestionProvider } from "@/features/questions/providers/types";
 import type { CanonicalQuestion, QuestionQuery, StudentQuestion } from "@/features/questions/types";
@@ -50,6 +51,130 @@ function assertSupportedFilters(provider: QuestionProvider, query: QuestionQuery
   }
 }
 
+/**
+ * Replacement rounds allowed after the first fetch, when integrity validation
+ * has removed candidates and the session is short.
+ *
+ * Three provider invocations in total. The bound matters because each one is
+ * itself already bounded — legacy ALOC sends at most 8 upstream requests and
+ * Station at most 12 — so the worst case is finite and small, and a provider
+ * whose inventory is genuinely bad is never hammered. A round that produces no
+ * new candidate at all ends the loop immediately, so an exhausted pool costs one
+ * extra call rather than three.
+ */
+export const MAX_INTEGRITY_TOPUP_ROUNDS = 2;
+
+/** One refused candidate. Contains no answer key and no student identity. */
+export interface QuestionIntegrityRejection {
+  provider: string;
+  providerQuestionId: string;
+  examBody: string;
+  subjectSlug: string;
+  reason: QuestionIntegrityReason;
+  detail?: string;
+}
+
+export interface AssembledQuestions {
+  questions: CanonicalQuestion[];
+  rejections: QuestionIntegrityRejection[];
+  /** Provider invocations spent. Asserted by tests to prove the bound holds. */
+  rounds: number;
+}
+
+/**
+ * Fetches, validates and — when validation removed something — tops up.
+ *
+ * A student who asked for 20 questions must receive 20 valid ones, not 17
+ * because three provider records had lost their examination context. Each round
+ * asks only for the shortfall and carries forward every source id already seen,
+ * so a replacement is never a duplicate and a known-bad question is never
+ * re-fetched. Admin blocks are applied to every round, not just the first.
+ *
+ * The requested filters (exam, subject, year, topic, difficulty) are passed
+ * through untouched: a shortage is reported honestly rather than papered over
+ * with questions the student did not ask for.
+ *
+ * Exported for tests, which inject a provider directly.
+ */
+export async function assembleDeliverableQuestions(
+  provider: QuestionProvider,
+  query: QuestionQuery,
+  blocked: BlockedQuestion[] = [],
+): Promise<AssembledQuestions> {
+  const seen = new Set<string>([
+    ...(query.excludeSourceIds ?? []),
+    ...blockedSourceIds(blocked, provider.id),
+  ]);
+  const questions: CanonicalQuestion[] = [];
+  const rejections: QuestionIntegrityRejection[] = [];
+  let rounds = 0;
+
+  while (questions.length < query.count && rounds <= MAX_INTEGRITY_TOPUP_ROUNDS) {
+    const batch = await provider.fetchQuestions({
+      ...query,
+      count: query.count - questions.length,
+      excludeSourceIds: [...seen],
+    });
+    rounds += 1;
+
+    let fresh = 0;
+    // The final word on blocks: a provider that ignored its exclusion list still
+    // cannot put a blocked question into a session.
+    for (const candidate of withoutBlockedQuestions(batch, blocked)) {
+      if (questions.length >= query.count) break;
+      const sourceId = candidate.source.providerQuestionId;
+      if (seen.has(sourceId)) continue;
+      seen.add(sourceId);
+      fresh += 1;
+
+      const verdict = checkQuestionIntegrity(candidate);
+      if (!verdict.valid) {
+        rejections.push({
+          provider: String(candidate.source.provider),
+          providerQuestionId: sourceId,
+          examBody: query.examBody,
+          subjectSlug: query.subjectSlug,
+          reason: verdict.reason!,
+          detail: verdict.detail,
+        });
+        continue;
+      }
+      questions.push(candidate);
+    }
+
+    // Nothing new arrived: the usable pool is exhausted and further rounds would
+    // only spend provider credits to receive the same records again.
+    if (fresh === 0) break;
+  }
+
+  return { questions, rejections, rounds };
+}
+
+/**
+ * One aggregated line per assembly, and only when something was refused.
+ *
+ * Deliberately not one log per question: bad inventory arrives in runs, and the
+ * per-batch summary is the shape the provider adapters already use. It records
+ * provider, provider question id, exam, subject and reason — never an answer
+ * key, an explanation or anything identifying a student.
+ */
+function reportIntegrityRejections(providerId: string, query: QuestionQuery, result: AssembledQuestions): void {
+  if (result.rejections.length === 0) return;
+
+  const counts = new Map<QuestionIntegrityReason, number>();
+  for (const rejection of result.rejections) {
+    counts.set(rejection.reason, (counts.get(rejection.reason) ?? 0) + 1);
+  }
+  const reasons = [...counts.entries()].map(([reason, count]) => `${reason}=${count}`).join(",");
+  const ids = result.rejections.slice(0, 20).map((rejection) => rejection.providerQuestionId).join(" ");
+
+  console.warn(
+    `[questions] integrity provider=${providerId} exam=${query.examBody} subject=${query.subjectSlug} ` +
+      `requested=${query.count} delivered=${result.questions.length} rejected=${result.rejections.length} ` +
+      `rounds=${result.rounds} reasons=${reasons} ids=${ids}`,
+  );
+}
+
 export async function fetchCanonicalQuestions(
   query: QuestionQuery,
   providerId?: string,
@@ -59,15 +184,13 @@ export async function fetchCanonicalQuestions(
   assertSupportedFilters(provider, validated);
 
   // Admin-blocked external questions are skipped here, the single entry point
-  // both session engines share, so neither engine needed to change.
+  // both session engines share, so neither engine needed to change. Integrity
+  // validation lives here for the same reason: Practice and Mock get identical
+  // protection without either engine knowing this rule exists.
   const blocked = await loadBlockedQuestions(validated.examBody, validated.subjectSlug);
-  const excluded = blockedSourceIds(blocked, provider.id);
-  const questions = await provider.fetchQuestions(
-    excluded.length
-      ? { ...validated, excludeSourceIds: [...(validated.excludeSourceIds ?? []), ...excluded] }
-      : validated,
-  );
-  return withoutBlockedQuestions(questions, blocked);
+  const assembled = await assembleDeliverableQuestions(provider, validated, blocked);
+  reportIntegrityRejections(provider.id, validated, assembled);
+  return assembled.questions;
 }
 
 /**
