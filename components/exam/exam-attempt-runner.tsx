@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -30,6 +29,7 @@ import { InlineAlert } from "@/components/ui/inline-alert";
 import { Sheet } from "@/components/ui/sheet";
 import { typography } from "@/components/ui/variants";
 import { cn } from "@/lib/utils";
+import { QuestionVisuals } from "@/components/questions/question-visual";
 
 interface ExamAttemptRunnerProps {
   recovered?: boolean;
@@ -424,16 +424,7 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
               </button>
             ) : null}
 
-            {question.assets.length > 0 ? (
-              <div className="mb-5 grid gap-3">
-                {question.assets.map((asset) => (
-                  <figure key={asset.id} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2">
-                    <Image src={asset.url} alt={asset.altText || "Question illustration"} width={960} height={640} unoptimized className="h-auto max-h-[420px] w-full rounded-lg object-contain" />
-                    {asset.caption ? <figcaption className="px-2 pb-1 pt-2 text-xs text-slate-500">{asset.caption}</figcaption> : null}
-                  </figure>
-                ))}
-              </div>
-            ) : null}
+            <QuestionVisuals assets={question.assets} className="mb-5" />
 
             {question.instruction ? (
               <p className="mb-2 whitespace-pre-line text-[13px] leading-[1.6] text-slate-600">{question.instruction}</p>

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -28,6 +27,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { buttonClasses, navClearance, typography } from "@/components/ui/variants";
 import { cn } from "@/lib/utils";
 import { AiQuestionExplanation } from "@/components/ai/question-explanation";
+import { QuestionVisuals } from "@/components/questions/question-visual";
 
 interface PracticeSessionRunnerProps {
   recovered?: boolean;
@@ -231,23 +231,7 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
           </div>
         ) : null}
 
-        {question.assets.length > 0 ? (
-          <div className="mt-5 grid gap-3">
-            {question.assets.map((asset) => (
-              <figure key={asset.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2">
-                <Image
-                  src={asset.url}
-                  alt={asset.altText || "Question illustration"}
-                  width={960}
-                  height={640}
-                  unoptimized
-                  className="h-auto w-full rounded-xl object-contain"
-                />
-                {asset.caption ? <figcaption className="px-2 pb-1 pt-2 text-xs text-slate-500">{asset.caption}</figcaption> : null}
-              </figure>
-            ))}
-          </div>
-        ) : null}
+        <QuestionVisuals assets={question.assets} className="mt-5" />
 
         {question.instruction ? (
           <p className="mt-4 whitespace-pre-line text-[13px] leading-[1.6] text-slate-600">{question.instruction}</p>

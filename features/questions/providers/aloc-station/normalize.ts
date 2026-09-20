@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { CanonicalQuestion } from "@/features/questions/types";
-import { cleanText, normalizeOptions, normalizeSection, resolveAnswerKey, type SectionContext } from "@/features/questions/providers/aloc/normalize";
+import { cleanText, normalizeOptions, normalizeQuestionAssets, normalizeSection, resolveAnswerKey, type SectionContext } from "@/features/questions/providers/aloc/normalize";
 import type { ExamBody, QuestionAsset, QuestionDifficulty } from "@/types/domain";
 
 export interface StationNormalizeContext {
@@ -29,15 +29,28 @@ function normalizeDifficulty(raw: unknown): QuestionDifficulty | null {
   return null;
 }
 
-function normalizeAssets(raw: unknown, questionId: string): QuestionAsset[] {
-  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  return values.flatMap((value, index) => {
-    const candidate = value && typeof value === "object"
-      ? (value as Record<string, unknown>).url
-      : value;
-    const url = cleanText(candidate);
-    if (!/^https?:\/\//i.test(url)) return [];
-    return [{ id: `aloc-station:${questionId}:asset:${index + 1}`, kind: "image" as const, url, altText: null, caption: null }];
+/**
+ * Station names its question visual `imageUrl`.
+ *
+ * This adapter previously read `record.assets ?? record.image`, and Station's
+ * record carries neither: its 17 keys are `id, text, options, correctAnswer,
+ * examType, subject, year, educationLevel, classLevel, section, imageUrl,
+ * questionNumber, country, category, institution, state, provenance`. Every
+ * Station diagram, graph, histogram and table was therefore discarded at this
+ * line, which is the root cause of the delivered questions that referred to a
+ * picture no student could see. Verified live on 2026-09-20 against both
+ * `/questions` and `/questions/{id}`; `imageUrl` is populated for the minority
+ * of records that need one and null otherwise.
+ *
+ * Field selection now lives in the shared normalizer, so the same mistake
+ * cannot be made independently in one adapter again.
+ */
+function normalizeAssets(record: Record<string, unknown>, questionId: string): QuestionAsset[] {
+  return normalizeQuestionAssets({
+    prefix: "aloc-station",
+    questionId,
+    record,
+    inlineSources: [record.questionHtml, record.text, record.question, record.section, record.passage],
   });
 }
 
@@ -103,7 +116,7 @@ export function normalizeStationQuestion(
       instruction: material.instruction,
       prompt,
       passage: material.passage,
-      assets: normalizeAssets(record.assets ?? record.image, providerQuestionId),
+      assets: normalizeAssets(record, providerQuestionId),
       options: normalized.options.map((option) => ({ ...option, id: `aloc-station:${providerQuestionId}:${option.key}` })),
       correctOptionKey,
       explanation: null,

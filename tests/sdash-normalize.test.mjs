@@ -264,9 +264,18 @@ test('K: nothing is fabricated from a missing or unusable image', () => {
 });
 
 test('K: alt text and caption stay null rather than being written for the provider', () => {
-  const [asset] = normalize({ image: 'http://cdn.sdash.test/q/1.png' }).question.assets;
+  const [asset] = normalize({ image: 'https://cdn.sdash.test/q/1.png' }).question.assets;
   assert.equal(asset.altText, null);
   assert.equal(asset.caption, null);
+});
+
+test('K: a plain-HTTP image is refused rather than admitted as an unrenderable asset', () => {
+  // The product is served over HTTPS and hands the URL straight to the browser,
+  // so an http:// image is blocked as mixed content and shows nothing. Admitting
+  // it would satisfy the visual-dependency check while the student still saw no
+  // diagram — the precise failure this suite exists to prevent. Refusing it
+  // leaves the question with no asset, so the integrity validator replaces it.
+  assert.deepEqual(normalize({ image: 'http://cdn.sdash.test/q/1.png' }).question.assets, []);
 });
 
 /* ──────────────────────────────────────────────  structural rejections */

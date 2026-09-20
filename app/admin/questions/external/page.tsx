@@ -13,6 +13,7 @@ import { formatCount, formatDateTime } from "@/features/admin/format";
 import { daysAgoIso, hrefWith, oneOf, pageParam, textParam, type SearchParams } from "@/features/admin/params";
 import { inspectExternalQuestion, listQuestionBlocks, loadQuestionCatalog } from "@/features/admin/questions";
 import { QuestionTabs } from "@/components/admin/question-tabs";
+import { QuestionVisuals } from "@/components/questions/question-visual";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +87,10 @@ export default async function ExternalQuestionsPage({ searchParams }: { searchPa
                 </div>
                 {inspection.question.passage?.body ? <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-[12px] text-slate-700">{inspection.question.passage.body}</p> : null}
                 {inspection.question.instruction ? <p className="whitespace-pre-wrap text-[12px] text-slate-600">{inspection.question.instruction}</p> : null}
+                {/* The inspector must show exactly what the student saw. Without
+                    the visual, an admin reading "The histogram above represents…"
+                    cannot tell a served diagram from a missing one. */}
+                <QuestionVisuals assets={inspection.question.assets ?? []} compact />
                 <p className="whitespace-pre-wrap text-[13.5px] leading-6 text-slate-900">{inspection.question.prompt}</p>
                 {!inspection.integrity.valid ? (
                   <InlineAlert tone="warning">

@@ -85,9 +85,10 @@ the only place this decision is made; UI components carry no ad-hoc checks.
 | reason | trigger | satisfied by |
 | --- | --- | --- |
 | `missing_passage_context` | "passage/quotation/extract/poem/text … above\|below" | a passage |
-| `missing_referenced_asset` | "diagram/figure/graph/table/map/image … above\|below" | an asset |
+| `missing_referenced_asset` | a question that depends on a visual — see "Question visuals" below, which widened this from the original "… above\|below" rule | an asset |
 | `missing_referenced_context` | "statement(s)/sentence/information … above", "from the above", "shown above" | a passage or an asset |
 | `missing_underlined_context` | "underlined word/phrase/expression", "the word in italics" or "in bold" inside a sentence | nothing — see below |
+| `duplicate_option_content` | two options a student would read as the same answer — see "Question visuals" below | nothing — the question is unanswerable |
 | `orphan_fragment` | a bare lexical fragment with no instruction, passage or asset | an instruction |
 
 The orphan-fragment heuristic is deliberately **not** a length rule. A prompt is
@@ -159,3 +160,203 @@ in `question_text`, and the admin editor has no passage authoring either
 have been schema complexity with no author to use it. An internal question whose
 prompt is a bare word with no instruction is rejected exactly like a provider
 one; the fix is to author the instruction into the question text.
+
+---
+
+# Question visuals — preservation, dependency and duplicate options
+
+Three questions were delivered to students in this state:
+
+```
+Mathematics 2018  "Using the table,What is the modal age?"     A 4  B 5  C 5  D 7
+Mathematics 2009  "The histogram above represents the number of candidates…"
+Chemistry   2025  "From the graph, it can be inferred that"
+```
+
+No table, no histogram, no graph. All three came from ALOC Station, and **all
+three had an image upstream**. Section 3 above was not wrong; it was incomplete,
+in two independent places.
+
+## 1. The visual was discarded at the adapter
+
+`normalizeStationQuestion` read `record.assets ?? record.image`. A Station
+record has neither. Its seventeen keys are:
+
+```
+id, text, options, correctAnswer, examType, subject, year, educationLevel,
+classLevel, section, imageUrl, questionNumber, country, category, institution,
+state, provenance
+```
+
+The field is **`imageUrl`**, verified live on 2026-09-20 against both
+`/questions` (the endpoint Practice uses) and `/questions/{id}`. Every Station
+diagram, graph, histogram, table, venn diagram and pie chart in the catalogue
+was therefore dropped at one line — across 3,978 unique questions served so far,
+**not one** carried an asset.
+
+The provider had all three images:
+
+| question | provider id | `imageUrl` |
+| --- | --- | --- |
+| Maths 2018 Q46 | `2ac31703…` | `…/JAMB_MATH_2018_Q46_ypiyhc.jpg` |
+| Maths 2009 Q47 | `213f8f9e…` | `…/JAMB_MATH_2009_Q47_kmqtw2.jpg` |
+| Chemistry 2025 Q34 | `bd6e7acb…` | `…/Chemistry_2025_Q34_sawho2.png` |
+
+Field selection now lives in one shared `normalizeQuestionAssets`, beside the
+text cleaner and the instruction/passage classifier, so a single adapter cannot
+quietly disagree with the others again. It reads every observed media field,
+accepts a string, an object or an array, and also recovers an `<img>` or a
+markdown image from a text field — `cleanText` strips markup, so a visual inside
+the question body would otherwise vanish with the tag.
+
+Two things are deliberately refused:
+
+- **Non-HTTPS URLs.** The product is served over HTTPS and hands the URL straight
+  to the browser, so an `http://` image is blocked as mixed content. Admitting
+  one would satisfy the dependency check while the student still saw nothing —
+  the exact failure being fixed. Refusing it leaves no asset, so the question is
+  replaced instead.
+- **Worked-answer images.** A live batch of ten returned
+  `…/MATH_2008_Q30_SOLUTION_nstl3`. Shown beside the prompt, that is the answer.
+  A `solution|answer|explanation|worked` path *token* excludes it; matching a
+  whole token is what keeps a chemistry diagram named `…_solubility` safe.
+
+Asset ids are `provider:questionId:image`, with a content hash appended when a
+question carries several. They deliberately do **not** name the field the URL
+came from: an id travels into the student payload, and `imageUrl` there would
+put Station's schema on the client exactly as `correctAnswer` would.
+
+## 2. The dependency was not recognised
+
+`VISUAL_REFERENCE` matched a noun beside "above" or "below", and nothing else.
+The three questions escaped for three different reasons: "Using the table," has
+no direction word, "histogram" was not in the noun list, and "From the graph,"
+has no direction word either.
+
+Recognition is now contextual — a noun that names a visual inside a grammatical
+frame that can only mean "the one in front of you":
+
+| frame | example |
+| --- | --- |
+| directional | "the table above", "the above diagram", "in the figure below" |
+| anchored | "the diagram given", "in the diagram shown", "the figure provided" |
+| directed | "using the table", "from the graph", "study the diagram", "according to the chart" |
+| predicated | "the histogram shows", "the diagram represents", "this graph is" |
+| enumerated | "the following table" — but never "which of the following diagrams", where it means the options |
+
+Nouns are split by how much they can mean anything else. `diagram, histogram,
+graph, table, chart, pie chart, bar chart, venn diagram, flow chart, figure, map`
+carry the predicated frame on their own; `image, picture, photograph, photo,
+illustration, drawing, sketch` need an explicit anchor, because "the image
+height", "his public image", "the mental picture" and "personal drawings" are
+ordinary English.
+
+Three guards stop ordinary prose being refused:
+
+1. **Fixed phrases** — "significant figures", "figure of speech", "periodic
+   table", "water table", "times table" are blanked before matching.
+2. **Adjacency** — only `the|this|that|these|those` immediately before the noun
+   counts, so "a circular table", "the periodic table", "the print image",
+   "the mental picture" and "in a pie chart" never match.
+3. **Anaphora** — a noun introduced earlier in the same text with an indefinite
+   article points backwards at the words, not at a picture. "…a graph of the
+   mass deposited is plotted. The slope of the graph gives?" stays deliverable;
+   "The slope of the graph gives?" on its own does not.
+
+The rules were designed and measured against the **123 questions in the live
+frozen corpus that mention a visual noun at all**. Of those, 67 are genuine
+references and all 67 are caught; 56 are non-referential and none is refused.
+Both directions were reviewed question by question.
+
+One documented, conservative loss: a question whose table is spelled out as text
+in its own prompt ("Use the table below… Zone © (mm) / I 45 300 / …") is still
+refused, because the table is not an asset. It was 1 of the 123.
+
+The reason code stays **`missing_referenced_asset`**. It already meant exactly
+this, and renaming it would have changed the admin inspector and the diagnostic
+line for no gain — this is coverage, not a redesign.
+
+## 3. Duplicate visible option content
+
+B and C were both "5". Duplicate option *keys* were already refused by the
+adapters; duplicate option *content* was not, so the question froze with two
+identical answers and any student choosing the wrong "5" was marked wrong for a
+reason they could not see.
+
+`findDuplicateOptionContent` compares only presentation: zero-width characters
+removed, Unicode spaces normalised, whitespace runs collapsed, ends trimmed.
+Nothing is evaluated and no punctuation is stripped, so `1/2` and `0.5`,
+`2+2` and `2 + 2`, `7!/3!` and `7!/3!4!`, `√((3T-K)/M)` and `√((3T-M)/K)`,
+`NO₂` and `N₂O`, and `teacher's`, `teacher` and `teachers` all stay distinct.
+HTML needs no handling: `cleanText` has already removed tags and decoded
+entities, so `<b>5</b>`, `&nbsp;5` and `5` arrive identical and are caught.
+
+Case is folded on the **first character only**, and only when the option list is
+not marking stress. Folding the whole string would be wrong twice over: English
+papers set stress questions whose options differ *only* in capitalisation — the
+live corpus holds `aSSociation / associaTION / associAtion / Association.` as
+four distinct answers — and chemistry distinguishes `CO` from `Co`. A capital
+inside a word anywhere in the list switches the comparison to exact, which is
+what keeps `dedicaTION / deDIcation / dedication / Dedication` intact while
+still catching `Receive` / `receive` and `Abuja` / `" Abuja "`.
+
+The reason is `duplicate_option_content`, and it is checked in
+`checkQuestionIntegrity` rather than in an adapter, so internal questions and all
+three providers are covered by one rule and rejection feeds the existing bounded
+top-up.
+
+## 4. Prompt sanitation
+
+`cleanText` now restores a space lost after punctuation, and only between a
+lowercase letter or digit and an uppercase letter. That is the narrowest rule
+that fixes "table,What" while leaving every initialism in the live corpus
+untouched — "A.V. Dicey", "S.I unit", "E.C.O.W.A.S", "S.V.P" and "I.S∩T∩W" all
+have an uppercase letter before the stop. A digit after the stop is excluded, so
+"0.02174", "2,000" and "N8,000" are unchanged, and a lowercase letter after it is
+excluded, so "f(x,y)" keeps its shape.
+
+Across 3,978 frozen prompts it changes exactly two: `table,What` → `table, What`
+and `Dr.Fajir` → `Dr. Fajir`. No word is added, removed, reordered or respelled.
+This is typography, not grammar, and no AI is involved.
+
+## 5. Rendering
+
+One component, `components/questions/question-visual.tsx`, is used by Practice,
+the Mock runner, answer review and the admin external inspector. Three copies is
+how a graph ends up legible in Practice and cropped in the exam.
+
+The exam context sets the rules: `w-full` + `h-auto` + `object-contain` means
+full column width, true aspect ratio and no cropping; the cap is a viewport
+fraction rather than a pixel box, so a tall table stays readable on a 360px
+screen instead of becoming a thumbnail; the figure clips rather than pushing the
+page wide; every visual can be opened full-size, because a candidate reading an
+axis label needs to zoom; and a remote image that fails to load says so in
+words, because a broken-image icon next to "From the graph, it can be inferred
+that" tells a student nothing about whether the question or their connection is
+at fault. Alt text is the provider's when it supplied one.
+
+The URL goes straight into `<img src>`. Nothing is fetched server-side, so the
+app is not an open image proxy and there is no SSRF surface; the browser loads
+it as an ordinary third-party image, and the existing service worker still
+caches it for offline use.
+
+## 6. Existing sessions
+
+Nothing is mutated. Frozen snapshots are history — a completed session's score
+was computed from what the student actually saw, and rewriting it would make the
+score unexplainable.
+
+Measured against the shipped rules:
+
+| | practice | mock |
+| --- | --- | --- |
+| frozen questions | 3,565 | 3,060 |
+| missing referenced visual | 35 | 51 |
+| duplicate option content | 27 | 19 |
+| sessions holding a missing visual | 18 (11 in progress) | 8 (1 in progress) |
+| sessions holding duplicate options | 23 (14 in progress) | 12 (2 in progress) |
+
+New sessions are clean from the first request: the visual is preserved, and
+anything still incomplete is refused and replaced before freeze. No migration is
+required — `student_snapshot` is `jsonb` and the optional asset simply appears in
+new rows.

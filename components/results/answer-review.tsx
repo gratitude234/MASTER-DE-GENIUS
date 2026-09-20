@@ -7,6 +7,7 @@ import { typography } from "@/components/ui/variants";
 import type { Outcome, ReviewItem } from "@/features/results/grading";
 import { cn } from "@/lib/utils";
 import { AiQuestionExplanation } from "@/components/ai/question-explanation";
+import { QuestionVisuals } from "@/components/questions/question-visual";
 import type { ResultKind } from "@/features/results/grading";
 
 /**
@@ -115,15 +116,12 @@ export function AnswerReview({
                 <p className="whitespace-pre-wrap text-[12.5px] leading-[1.6] text-slate-600">{item.question.instruction}</p>
               ) : null}
 
-              <p className="whitespace-pre-wrap text-sm font-semibold leading-[1.5] text-slate-950">{item.question.prompt}</p>
+              {/* The same renderer, in the same reading order, as the runners:
+                  a student reviewing a wrong answer needs the diagram exactly
+                  where and as legibly as they needed it while answering. */}
+              <QuestionVisuals assets={item.question.assets} compact />
 
-              {item.question.assets.map(asset => (
-                <figure key={asset.id}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={asset.url} alt={asset.altText || "Question illustration"} loading="lazy" className="max-h-96 max-w-full rounded-xl object-contain" />
-                  {asset.caption && <figcaption className="mt-2 text-sm text-slate-600">{asset.caption}</figcaption>}
-                </figure>
-              ))}
+              <p className="whitespace-pre-wrap text-sm font-semibold leading-[1.5] text-slate-950">{item.question.prompt}</p>
 
               <ul className="space-y-1.5">
                 {item.question.options.map(option => (

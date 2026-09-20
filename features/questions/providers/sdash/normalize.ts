@@ -3,6 +3,7 @@ import "server-only";
 import {
   cleanText,
   normalizeOptions,
+  normalizeQuestionAssets,
   normalizeSection,
   resolveAnswerKey,
 } from "@/features/questions/providers/aloc/normalize";
@@ -48,17 +49,21 @@ function normalizeYear(raw: unknown): number | null {
 }
 
 /**
- * One image at most, and only when it is an absolute HTTP(S) URL.
+ * Sdash names its visual `image`; it is null for most records.
  *
- * `image` is null for most records and can carry a relative path or a
- * placeholder. Nothing is repaired here: a question whose prompt needs a
+ * Field selection, URL safety and worked-answer exclusion all live in the
+ * shared normalizer, so Sdash cannot drift from the ALOC adapters the way the
+ * Station one did. Nothing is repaired here: a question whose prompt needs a
  * diagram it did not receive is refused later by the shared integrity
  * validator, which is the single place that decides deliverability.
  */
-function normalizeAssets(raw: unknown, questionId: string): QuestionAsset[] {
-  const url = cleanText(raw);
-  if (!url || !/^https?:\/\//i.test(url)) return [];
-  return [{ id: `sdash:${questionId}:image`, kind: "image", url, altText: null, caption: null }];
+function normalizeAssets(record: Record<string, unknown>, questionId: string): QuestionAsset[] {
+  return normalizeQuestionAssets({
+    prefix: "sdash",
+    questionId,
+    record,
+    inlineSources: [record.question, record.section],
+  });
 }
 
 /**
@@ -130,7 +135,7 @@ export function normalizeSdashQuestion(
       instruction: material.instruction,
       prompt,
       passage: material.passage,
-      assets: normalizeAssets(record.image, providerQuestionId),
+      assets: normalizeAssets(record, providerQuestionId),
       options: normalized.options.map((option) => ({
         ...option,
         id: `sdash:${providerQuestionId}:${option.key}`,

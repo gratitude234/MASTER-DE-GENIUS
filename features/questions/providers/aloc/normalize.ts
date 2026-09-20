@@ -81,6 +81,23 @@ function decodeEntities(value: string): string {
  * escapes on render, so the product keeps one safe renderer and never needs
  * dangerouslySetInnerHTML.
  */
+/**
+ * Restores a space that the provider's own text lost after punctuation:
+ * "Using the table,What is the modal age?" was served exactly like that.
+ *
+ * Deliberately the narrowest rule that fixes the observed defect. The space is
+ * only inserted between a lowercase letter or digit and an uppercase letter,
+ * which is what keeps every initialism in the live corpus intact — "A.V. Dicey",
+ * "S.I unit", "E.C.O.W.A.S", "S.V.P", "I.S∩T∩W" all have an *uppercase* letter
+ * before the stop and are left alone. A digit after the stop is excluded too, so
+ * "0.02174", "2,000" and "N8,000" are untouched, and a lowercase letter after it
+ * is excluded, so "f(x,y)" keeps its shape.
+ *
+ * This is typography, not grammar: no word is added, removed, reordered or
+ * respelled, so the question means exactly what the provider sent.
+ */
+const MISSING_SPACE_AFTER_PUNCTUATION = /([a-z0-9])([,.;:!?])([A-Z])/g;
+
 export function cleanText(value: unknown): string {
   if (typeof value === "number") return String(value);
   if (typeof value !== "string") return "";
@@ -89,6 +106,7 @@ export function cleanText(value: unknown): string {
     .replace(/[^\S\n]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
+    .replace(MISSING_SPACE_AFTER_PUNCTUATION, "$1$2 $3")
     .trim();
 }
 
@@ -311,10 +329,213 @@ function normalizeYear(raw: unknown): number | null {
   return Number.isInteger(year) && year >= 1960 && year <= 2100 ? year : null;
 }
 
-function normalizeAssets(raw: unknown, questionId: string): QuestionAsset[] {
-  const url = cleanText(raw);
-  if (!url || !/^https?:\/\//i.test(url)) return [];
-  return [{ id: `aloc:${questionId}:image`, kind: "image", url, altText: null, caption: null }];
+/* -------------------------------------------------------------------------
+ * Question visuals
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Field names that have been observed to carry a question visual, longest-lived
+ * first. Nothing here is speculative: each entry is a field a probed provider
+ * response actually used.
+ *
+ *   - `imageUrl`   — ALOC Station. Verified 2026-09-20 against both `/questions`
+ *                    and `/questions/{id}`; it is the *only* media field in
+ *                    Station's 17-key record, and reading `image`/`assets`
+ *                    instead is what silently dropped every Station diagram.
+ *   - `image`      — legacy ALOC and Sdash V1.
+ *   - the rest     — accepted defensively because they cost nothing and a
+ *                    provider that renames a field must not silently lose a
+ *                    diagram again. A field that is absent simply never matches.
+ *
+ * Order matters only for asset ordering, never for correctness.
+ */
+export const PROVIDER_MEDIA_FIELDS = [
+  "imageUrl", "image_url", "image", "questionImage", "question_image",
+  "diagram", "graph", "figure", "media", "assets", "attachments", "images",
+] as const;
+
+/** Keys that carry the URL when a media entry is an object rather than a string. */
+const MEDIA_URL_KEYS = ["url", "src", "imageUrl", "image_url", "image", "href", "link", "path"];
+/** Keys that carry human-readable alternative text for an entry. */
+const MEDIA_ALT_KEYS = ["altText", "alt_text", "alt", "description", "label", "title"];
+/** Keys that carry a caption shown beneath the visual. */
+const MEDIA_CAPTION_KEYS = ["caption", "figcaption", "subtitle"];
+
+/**
+ * Only `https:` is admitted.
+ *
+ * The product is served over HTTPS and renders a provider URL directly in the
+ * browser, so a plain-HTTP image is blocked as mixed content and shows nothing.
+ * Admitting one would be worse than refusing it: the question would satisfy the
+ * visual-dependency check while the student still saw no diagram, which is the
+ * exact failure this work exists to remove. A refused URL leaves the question
+ * with no asset, so the integrity validator rejects and replaces it instead.
+ *
+ * This also excludes `data:`, `javascript:`, `file:` and protocol-relative URLs
+ * by construction. No URL is ever fetched server-side, so there is no SSRF
+ * surface here; the browser fetches it as an ordinary third-party image.
+ */
+function usableAssetUrl(value: unknown): string | null {
+  const url = cleanText(value);
+  if (!url || !/^https:\/\/[^\s<>"']+$/i.test(url)) return null;
+  return url;
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const text = cleanText(record[key]);
+    if (text) return text;
+  }
+  return null;
+}
+
+/**
+ * Cloudinary paths in the ALOC corpus mark worked answers explicitly — a live
+ * random batch of ten returned `…/MATH_2008_Q30_SOLUTION_nstl3`. Attaching such
+ * an image to the question would show the student the answer before they chose
+ * one, so it is never treated as a question visual.
+ *
+ * Matched as a whole path token, so a chemistry diagram is not caught by
+ * "solubility" or by a question that merely discusses solutions. A question
+ * whose only image is a worked answer keeps no asset at all and is then refused
+ * by the integrity validator if its text depends on a visual — the honest
+ * outcome, because that question has no usable diagram.
+ */
+const SOLUTION_ASSET = /(?:^|[/_\-.])(?:solution|solutions|answer|answers|explanation|worked)(?:$|[/_\-.])/i;
+
+export function isSolutionAsset(url: string): boolean {
+  try {
+    return SOLUTION_ASSET.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+interface MediaCandidate {
+  url: string;
+  altText: string | null;
+  caption: string | null;
+}
+
+function collectCandidates(value: unknown, into: MediaCandidate[]): void {
+  if (value == null) return;
+  if (Array.isArray(value)) {
+    for (const entry of value) collectCandidates(entry, into);
+    return;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const url = usableAssetUrl(firstString(record, MEDIA_URL_KEYS));
+    if (!url) return;
+    into.push({
+      url,
+      altText: firstString(record, MEDIA_ALT_KEYS),
+      caption: firstString(record, MEDIA_CAPTION_KEYS),
+    });
+    return;
+  }
+  const url = usableAssetUrl(value);
+  if (url) into.push({ url, altText: null, caption: null });
+}
+
+/** `<img src="…" alt="…">`, read from the raw field before markup is stripped. */
+const HTML_IMG = /<img\b[^>]*>/gi;
+const HTML_ATTRIBUTE = (name: string) => new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
+/** `![alt](https://…)` — markdown image syntax, which markup stripping also loses. */
+const MARKDOWN_IMG = /!\[([^\]]*)\]\(\s*([^)\s]+)[^)]*\)/g;
+
+/**
+ * Visuals carried inside a text field rather than a media field.
+ *
+ * `cleanText` deletes markup so the product can render without
+ * `dangerouslySetInnerHTML`, which means an `<img>` inside a question body would
+ * vanish without trace. It is read here, before that happens, and turned into an
+ * ordinary canonical asset — the image survives and the renderer stays safe,
+ * because only the URL and the alt text are kept and everything else in the tag
+ * is discarded.
+ */
+export function extractInlineImages(raw: unknown): MediaCandidate[] {
+  if (typeof raw !== "string" || !raw) return [];
+  const found: MediaCandidate[] = [];
+
+  for (const tag of raw.match(HTML_IMG) ?? []) {
+    const src = HTML_ATTRIBUTE("src").exec(tag);
+    const url = usableAssetUrl(src ? (src[2] ?? src[3] ?? src[4]) : null);
+    if (!url) continue;
+    const alt = HTML_ATTRIBUTE("alt").exec(tag);
+    found.push({ url, altText: alt ? cleanText(alt[2] ?? alt[3] ?? alt[4]) || null : null, caption: null });
+  }
+
+  for (const match of raw.matchAll(MARKDOWN_IMG)) {
+    const url = usableAssetUrl(match[2]);
+    if (!url) continue;
+    found.push({ url, altText: cleanText(match[1]) || null, caption: null });
+  }
+
+  return found;
+}
+
+export interface NormalizeAssetsOptions {
+  /** `aloc`, `aloc-station`, `sdash` — the asset id namespace. */
+  prefix: string;
+  questionId: string;
+  /** The provider record, read for every field in `PROVIDER_MEDIA_FIELDS`. */
+  record?: Record<string, unknown> | null;
+  /** Raw, uncleaned text fields that may carry inline `<img>` or markdown. */
+  inlineSources?: unknown[];
+}
+
+/**
+ * The one place a provider visual becomes a canonical `QuestionAsset`.
+ *
+ * Shared by all three external adapters for the same reason the text cleaner and
+ * the instruction/passage classifier are: a second copy would be a second set of
+ * rules, and a diagram must survive identically whichever provider a subject
+ * routes to.
+ *
+ * Asset ids are stable and deterministic — `provider:questionId:image`, with a
+ * content hash appended when a question carries more than one — so the same
+ * record always produces the same id and a frozen snapshot can be compared
+ * against a live one.
+ *
+ * The id deliberately does **not** name the field the URL came from. Provider
+ * field names stop at the adapter, and an id travels all the way into the
+ * student payload; `imageUrl` in a snapshot would put Station's schema on the
+ * client exactly as `correctAnswer` or `hasPassage` would.
+ *
+ * `kind` stays `"image"`: it is what the provider actually stated, and
+ * inferring "graph" or "table" from the question's wording would be invention.
+ */
+const ASSET_ID_SEGMENT = "image";
+export function normalizeQuestionAssets(options: NormalizeAssetsOptions): QuestionAsset[] {
+  const assets: QuestionAsset[] = [];
+  const takenUrls = new Set<string>();
+  const takenIds = new Set<string>();
+
+  const push = (candidate: MediaCandidate) => {
+    if (takenUrls.has(candidate.url)) return;
+    // A worked-answer image is not a question visual and must never be shown.
+    if (isSolutionAsset(candidate.url)) return;
+    takenUrls.add(candidate.url);
+    let id = `${options.prefix}:${options.questionId}:${ASSET_ID_SEGMENT}`;
+    if (takenIds.has(id)) id = `${id}:${stableHash(candidate.url)}`;
+    takenIds.add(id);
+    assets.push({ id, kind: "image", url: candidate.url, altText: candidate.altText, caption: candidate.caption });
+  };
+
+  const record = options.record ?? {};
+  for (const field of PROVIDER_MEDIA_FIELDS) {
+    if (!(field in record)) continue;
+    const candidates: MediaCandidate[] = [];
+    collectCandidates(record[field], candidates);
+    for (const candidate of candidates) push(candidate);
+  }
+
+  for (const source of options.inlineSources ?? []) {
+    for (const candidate of extractInlineImages(source)) push(candidate);
+  }
+
+  return assets;
 }
 
 export interface NormalizeResult {
@@ -358,7 +579,14 @@ export function normalizeAlocQuestion(raw: unknown, context: NormalizeContext): 
       instruction: section.instruction,
       prompt,
       passage: section.passage,
-      assets: normalizeAssets(record.image, providerQuestionId),
+      assets: normalizeQuestionAssets({
+        prefix: "aloc",
+        questionId: providerQuestionId,
+        record: record as Record<string, unknown>,
+        // Read before `cleanText` strips markup, so an `<img>` inside the
+        // question body or its section text survives instead of vanishing.
+        inlineSources: [record.question, record.section],
+      }),
       options,
       correctOptionKey,
       explanation: cleanText(record.solution) || null,
