@@ -1,5 +1,6 @@
 import "server-only";
 
+import { carriesMaterial, classifyQuestionContext, contextDiagnostic, type ContextClassification } from "@/features/questions/context";
 import type { CanonicalQuestion, QuestionPassage } from "@/features/questions/types";
 import type { ExamBody, QuestionAsset, QuestionOption } from "@/types/domain";
 
@@ -58,6 +59,19 @@ const ENTITIES: Record<string, string> = {
 const TAG = /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>/g;
 const LINE_BREAK_TAG = /<\s*(?:br\s*\/?|\/\s*(?:p|div|li|tr|h[1-6]))\s*>/gi;
 
+/**
+ * HTML and XML comments, removed before tags.
+ *
+ * `TAG` requires a letter after the optional slash, so `<!-- × -->` never
+ * matched it and a comment travelled all the way to the student: the live
+ * corpus holds twenty-seven contexts reading "12.02 ×<!-- × --> 20.06". They
+ * come from MathML, where a converter annotates a numeric entity with the
+ * character it denotes — `<mo>&#x00D7;<!-- × --></mo>`. The entity is the
+ * content and the comment is only a note about it, so removing the comment
+ * keeps "×" and loses nothing.
+ */
+const COMMENT = /<!--[\s\S]*?-->/g;
+
 function decodeEntities(value: string): string {
   return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g, (match, body: string) => {
     if (body.startsWith("#")) {
@@ -101,7 +115,7 @@ const MISSING_SPACE_AFTER_PUNCTUATION = /([a-z0-9])([,.;:!?])([A-Z])/g;
 export function cleanText(value: unknown): string {
   if (typeof value === "number") return String(value);
   if (typeof value !== "string") return "";
-  return decodeEntities(value.replace(LINE_BREAK_TAG, "\n").replace(TAG, ""))
+  return decodeEntities(value.replace(COMMENT, "").replace(LINE_BREAK_TAG, "\n").replace(TAG, ""))
     .replace(/\r\n?/g, "\n")
     .replace(/[^\S\n]+/g, " ")
     .replace(/ *\n */g, "\n")
@@ -262,6 +276,13 @@ export interface SectionContext {
   instruction: string | null;
   /** Genuine source material the prompt quotes. */
   passage: QuestionPassage | null;
+  /**
+   * Set when context was refused rather than shown — a worked solution, a
+   * broken equation layout, a duplicate of the prompt. Diagnostic only: it
+   * tells the integrity validator and the admin inspector that the question
+   * lost context, as opposed to never having had any.
+   */
+  discardedContext?: ContextClassification;
 }
 
 /**
@@ -282,7 +303,11 @@ export interface SectionContext {
  *
  * Nothing is invented: text is only classified, never written.
  */
-export function normalizeSection(raw: unknown, hasPassage?: unknown): SectionContext {
+export function normalizeSection(
+  raw: unknown,
+  hasPassage?: unknown,
+  options?: NormalizeSectionOptions,
+): SectionContext {
   let title: string | null = null;
   let body = "";
   let declaredInstruction = "";
@@ -305,23 +330,63 @@ export function normalizeSection(raw: unknown, hasPassage?: unknown): SectionCon
 
   if (!body) return instructionOnly("");
 
+  /*
+   * What the text *is* comes before what it is long enough to be.
+   *
+   * The length rule below was the only positive test for source material, so
+   * any provider value of forty characters became a passage — which is how a
+   * flattened MathML worked solution ended up in the blue PASSAGE card with the
+   * answer inside it. Material that cannot be shown faithfully is refused here,
+   * and the question is then judged without it by `checkQuestionIntegrity`.
+   */
+  const material = classifyQuestionContext({ raw, text: body, prompt: options?.prompt });
+  if (material.discard) {
+    return { instruction: declaredInstruction || null, passage: null, discardedContext: material };
+  }
+  body = material.text;
+
+  const asContext = (): SectionContext => ({
+    instruction: declaredInstruction || null,
+    passage: { id: `aloc:passage:${stableHash(body)}`, title, body, kind: material.kind },
+  });
+
   if (hasPassage !== undefined) {
     if (!Number(hasPassage)) return instructionOnly(body);
-    return body.length < MIN_PASSAGE_LENGTH
-      ? instructionOnly(body)
-      : { instruction: declaredInstruction || null, passage: { id: `aloc:passage:${stableHash(body)}`, title, body } };
+    return body.length < MIN_PASSAGE_LENGTH ? instructionOnly(body) : asContext();
   }
 
   // No flag: a bare instruction line is not a comprehension passage, and
-  // inventing one would put fabricated content on screen.
+  // inventing one would put fabricated content on screen. Rubric recognition
+  // runs first and is unchanged — "Choose the best option." is the task, not
+  // material, however little prose it contains.
   if (looksLikeInstruction(body)) return instructionOnly(body);
-  if (body.length < MIN_PASSAGE_LENGTH) return { instruction: declaredInstruction || null, passage: null };
-  return { instruction: declaredInstruction || null, passage: { id: `aloc:passage:${stableHash(body)}`, title, body } };
+
+  /*
+   * A formula or a table is kept whatever its length. `MIN_PASSAGE_LENGTH`
+   * exists to stop a short line of prose being mistaken for a comprehension
+   * extract; "v = u + at" is not a short passage but a different kind of thing,
+   * and dropping it would lose context the question may need.
+   */
+  if (body.length < MIN_PASSAGE_LENGTH) {
+    return material.kind === "given" && carriesMaterial(body)
+      ? asContext()
+      : { instruction: declaredInstruction || null, passage: null };
+  }
+  return asContext();
 }
 
 /** Kept for callers that only need the passage half of the classification. */
 export function normalizePassage(raw: unknown, hasPassage?: unknown): QuestionPassage | null {
   return normalizeSection(raw, hasPassage).passage;
+}
+
+export interface NormalizeSectionOptions {
+  /**
+   * The question prompt. Supplied so context that merely repeats the prompt can
+   * be recognised — the 2016 Mathematics case showed the same fraction twice,
+   * once as a broken stack in the passage card and once inside the question.
+   */
+  prompt?: string;
 }
 
 function normalizeYear(raw: unknown): number | null {
@@ -566,7 +631,7 @@ export function normalizeAlocQuestion(raw: unknown, context: NormalizeContext): 
   const correctOptionKey = resolveAnswerKey(record.answer, options);
   if (!correctOptionKey) return { discarded: "unresolved_answer" };
 
-  const section = normalizeSection(record.section, record.hasPassage);
+  const section = normalizeSection(record.section, record.hasPassage, { prompt });
 
   return {
     question: {
@@ -579,6 +644,7 @@ export function normalizeAlocQuestion(raw: unknown, context: NormalizeContext): 
       instruction: section.instruction,
       prompt,
       passage: section.passage,
+      discardedContext: contextDiagnostic(section.discardedContext),
       assets: normalizeQuestionAssets({
         prefix: "aloc",
         questionId: providerQuestionId,

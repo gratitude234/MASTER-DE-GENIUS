@@ -27,7 +27,18 @@ export type QuestionIntegrityReason =
   | "missing_referenced_context"
   | "missing_underlined_context"
   | "duplicate_option_content"
-  | "orphan_fragment";
+  | "orphan_fragment"
+  /**
+   * The question's context arrived broken beyond safe presentation — a MathML
+   * equation flattened into one character per line, markup residue, a worked
+   * solution — and the prompt turns out to need it. Distinct from the
+   * `missing_*` reasons, which mean the provider sent no context at all: this
+   * one means context existed and was refused, which is what an admin needs to
+   * know to tell a gap in the inventory from a defect in it.
+   */
+  | "malformed_context"
+  /** The refused context was a label with no body: "Midpoint =", "Given that:". */
+  | "incomplete_context";
 
 /**
  * The structural subset the check needs. Both `CanonicalQuestion` and
@@ -40,6 +51,15 @@ export interface QuestionIntegrityInput {
   passage?: { body: string } | null;
   assets?: readonly { id: string }[] | null;
   options?: readonly { text: string }[] | null;
+  /**
+   * Context the adapter refused rather than showed. Optional, and purely a
+   * refinement: it never rejects a question that would otherwise pass, and
+   * never rescues one that would otherwise fail. It only sharpens the reason —
+   * a prompt that says "the distribution above" is missing its table either
+   * way, but an admin should be able to see that the table arrived and was
+   * unusable rather than never arriving at all.
+   */
+  discardedContext?: { kind: string; detail?: string } | null;
 }
 
 export interface QuestionIntegrityResult {
@@ -445,13 +465,42 @@ export function checkQuestionIntegrity(question: QuestionIntegrityInput): Questi
   const instruction = hasText(question.instruction) ? question.instruction!.trim() : "";
   const hasPassage = hasText(question.passage?.body);
   const hasAssets = (question.assets?.length ?? 0) > 0;
+
+  /**
+   * Re-labels a missing-context verdict when the context was refused rather
+   * than absent. The verdict itself — valid or not — is decided entirely by the
+   * rules below and is never changed here.
+   */
+  const discarded = question.discardedContext;
+
+  /**
+   * Only the three verdicts a context could have satisfied are re-labelled. A
+   * missing *diagram* is still `missing_referenced_asset` even when a worked
+   * solution was thrown away beside it — the provider sent no image either way,
+   * and saying otherwise would send an admin looking for the wrong defect.
+   */
+  const CONTEXT_SATISFIABLE = new Set<QuestionIntegrityReason>([
+    "missing_passage_context", "missing_referenced_context", "orphan_fragment",
+  ]);
+
+  const explain = (result: QuestionIntegrityResult): QuestionIntegrityResult => {
+    if (!discarded || result.valid || !result.reason) return result;
+    if (!CONTEXT_SATISFIABLE.has(result.reason)) return result;
+    const reason: QuestionIntegrityReason =
+      discarded.kind === "incomplete" ? "incomplete_context" : "malformed_context";
+    return {
+      ...result,
+      reason,
+      detail: `${result.detail ?? result.reason}; context discarded: ${discarded.detail ?? discarded.kind}`,
+    };
+  };
   // Everything the student will read, judged together: an instruction that
   // quotes a missing passage breaks the question just as surely as a prompt that does.
   const visible = instruction ? `${instruction}\n${prompt}` : prompt;
 
   const sourceReference = SOURCE_REFERENCE.exec(visible);
   if (sourceReference && !hasPassage) {
-    return { valid: false, reason: "missing_passage_context", detail: sourceReference[0].toLowerCase() };
+    return explain({ valid: false, reason: "missing_passage_context", detail: sourceReference[0].toLowerCase() });
   }
 
   const visualReference = findVisualReference(visible);
@@ -461,12 +510,12 @@ export function checkQuestionIntegrity(question: QuestionIntegrityInput): Questi
 
   const ambiguousReference = AMBIGUOUS_REFERENCE.exec(visible);
   if (ambiguousReference && !hasPassage && !hasAssets) {
-    return { valid: false, reason: "missing_referenced_context", detail: ambiguousReference[0].toLowerCase() };
+    return explain({ valid: false, reason: "missing_referenced_context", detail: ambiguousReference[0].toLowerCase() });
   }
 
   const genericReference = GENERIC_REFERENCE.exec(visible);
   if (genericReference && !hasPassage && !hasAssets) {
-    return { valid: false, reason: "missing_referenced_context", detail: genericReference[0].toLowerCase() };
+    return explain({ valid: false, reason: "missing_referenced_context", detail: genericReference[0].toLowerCase() });
   }
 
   // Answerable only when the prompt is itself the expression in question; inside
@@ -486,7 +535,7 @@ export function checkQuestionIntegrity(question: QuestionIntegrityInput): Questi
   }
 
   if (isLexicalFragment(prompt) && !instruction && !hasPassage && !hasAssets) {
-    return { valid: false, reason: "orphan_fragment", detail: "no instruction, passage or asset accompanies the fragment" };
+    return explain({ valid: false, reason: "orphan_fragment", detail: "no instruction, passage or asset accompanies the fragment" });
   }
 
   return { valid: true };

@@ -17,6 +17,7 @@ import type {
   CompletePracticeSessionResult,
   PracticeSessionView,
 } from "@/features/practice/types";
+import { contextHeading } from "@/features/questions/context";
 import { useOfflineSession } from "@/features/offline/use-session";
 import { SessionStatus, presentSaveState } from "@/components/pwa/session-status";
 import { SyncNotice } from "@/components/pwa/sync-notice";
@@ -226,7 +227,7 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
 
         {question.passage ? (
           <div className="mt-4 max-h-64 overflow-y-auto rounded-2xl bg-brand-50 px-4 py-3.5">
-            <h3 className={cn(typography.eyebrow, "tracking-[0.08em] text-brand-500")}>{question.passage.title || "Passage"}</h3>
+            <h3 className={cn(typography.eyebrow, "tracking-[0.08em] text-brand-500")}>{contextHeading(question.passage)}</h3>
             <p className="mt-1.5 max-w-prose whitespace-pre-line text-[13px] leading-[1.7] text-slate-800">{question.passage.body}</p>
           </div>
         ) : null}

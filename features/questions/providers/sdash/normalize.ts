@@ -1,5 +1,6 @@
 import "server-only";
 
+import { contextDiagnostic } from "@/features/questions/context";
 import {
   cleanText,
   normalizeOptions,
@@ -120,7 +121,7 @@ export function normalizeSdashQuestion(
    * genuine prose becomes a passage. Nothing is written — text is classified,
    * never invented.
    */
-  const material = normalizeSection(record.section);
+  const material = normalizeSection(record.section, undefined, { prompt });
 
   return {
     question: {
@@ -135,6 +136,7 @@ export function normalizeSdashQuestion(
       instruction: material.instruction,
       prompt,
       passage: material.passage,
+      discardedContext: contextDiagnostic(material.discardedContext),
       assets: normalizeAssets(record, providerQuestionId),
       options: normalized.options.map((option) => ({
         ...option,

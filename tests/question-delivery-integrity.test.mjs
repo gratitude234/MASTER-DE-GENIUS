@@ -219,3 +219,127 @@ test('an integrity rejection is not a permanent block, and stays visible to an a
   // exact snapshot a student was served.
   assert.match(source('features/admin/questions.ts'), /checkQuestionIntegrity/);
 });
+
+/* ────────────────────────────────────────────────────────────────────
+ * Malformed mathematical context
+ *
+ * ALOC Station's `section` carries a MathJax MathML document for much of the
+ * Mathematics catalogue. Flattened to plain text it becomes an unreadable
+ * vertical stack, and for thirteen distinct live records it is the *worked
+ * solution*, ending in the correct option. None of it may be shown; whether the
+ * question survives without it is decided by the integrity rules that already
+ * exist, not by a new guess about what maths a prompt needs.
+ * ──────────────────────────────────────────────────────────────── */
+
+const mathml = (body) => `<math xmlns="http://www.w3.org/1998/Math/MathML">\n${body}\n</math>`;
+
+/** The exact 2004 production record: prompt self-contained, section = the answer. */
+const workedSolution = (id) => ({
+  id,
+  question: 'Find the midpoint of the line joining P(-3, 5) and Q(5, -3).',
+  option: { a: '(1, 1)', b: '(2, 2)', c: '(4, 4)', d: '(4, -4)' },
+  answer: 'a',
+  examyear: '2004',
+  section: mathml('  <mi>M</mi>\n  <mi>i</mi>\n  <mi>d</mi>\n  <mi>p</mi>\n  <mi>o</mi>\n  <mi>i</mi>\n  <mi>n</mi>\n  <mi>t</mi>\n  <mo>=</mo>\n  <mo stretchy="false">(</mo>\n  <mn>1</mn>\n  <mo>,</mo>\n  <mn>1</mn>\n  <mo stretchy="false">)</mo>'),
+});
+
+/** The exact 2016 production record: the section merely repeats the prompt. */
+const duplicatedFraction = (id) => ({
+  id,
+  question: 'Evaluate (12.02×20.06)/(26.04×60.06)\n, correct to three significant figures.',
+  option: { a: '0.157', b: '0.154', c: '0.155', d: '0.158' },
+  answer: 'b',
+  examyear: '2016',
+  section: mathml('  <mfrac>\n    <mrow>\n      <mn>12.02</mn>\n      <mo>&#x00D7;<!-- × --></mo>\n      <mn>20.06</mn>\n    </mrow>\n    <mrow>\n      <mn>26.04</mn>\n      <mo>&#x00D7;<!-- × --></mo>\n      <mn>60.06</mn>\n    </mrow>\n  </mfrac>'),
+});
+
+/**
+ * The 2011 production record: the section *was* the table, and the prompt
+ * cannot be answered without it. Nothing can reconstruct an `<mtable>` from a
+ * column of single characters, so this question must be refused.
+ */
+const destroyedTable = (id) => ({
+  id,
+  question: 'Find the standard deviation of the above distribution.',
+  option: { a: '2.4', b: '2.5', c: '2.6', d: '2.7' },
+  answer: 'a',
+  examyear: '2011',
+  // Pretty-printed exactly as the provider sends it: one element per line, and
+  // one `<mi>` per character, because a multi-letter name in TeX maths mode is
+  // a product of single-letter identifiers.
+  section: mathml('  <mtable>\n    <mtr>\n      <mtd>\n        <mi>C</mi>\n        <mi>l</mi>\n        <mi>a</mi>\n        <mi>s</mi>\n        <mi>s</mi>\n      </mtd>\n    </mtr>\n  </mtable>'),
+});
+
+test('a worked solution in the context field never reaches the student', async () => {
+  const { provider } = upstream([[...range(1, 19), workedSolution(50)]]);
+  const result = await assembleDeliverableQuestions(provider, query());
+
+  const question = result.questions.find((q) => q.source.providerQuestionId === '50');
+  assert.ok(question, 'the prompt is self-contained, so the question is still deliverable');
+  assert.equal(question.passage, null, 'the solution must not be shown as context');
+  assert.equal(question.instruction, null, 'nor smuggled in as an instruction');
+
+  const [student] = toStudentQuestions([question]);
+  const visible = JSON.stringify(student);
+  assert.ok(!visible.includes('Midpoint'), 'the solution label leaked into the student payload');
+  assert.ok(!/\(\s*1\s*,\s*1\s*\)[^"]*"[^"]*$/.test(''), 'guard placeholder');
+  // The answer text appears once, as option A. It must not appear a second time.
+  assert.equal(visible.split('(1, 1)').length - 1, 1, 'the answer appeared outside the option list');
+});
+
+test('context that merely repeats the prompt is not shown as a passage', async () => {
+  const { provider } = upstream([[...range(1, 19), duplicatedFraction(51)]]);
+  const result = await assembleDeliverableQuestions(provider, query());
+
+  const question = result.questions.find((q) => q.source.providerQuestionId === '51');
+  assert.ok(question, 'the question is answerable from its own prompt');
+  assert.equal(question.passage, null);
+  assert.ok(question.prompt.includes('12.02'), 'the prompt itself keeps the expression');
+  assert.equal(question.discardedContext.kind, 'duplicate');
+});
+
+test('an irreparably malformed required context rejects the question and is topped up', async () => {
+  const { calls, provider } = upstream([[...range(1, 19), destroyedTable(52)], [valid(60)]]);
+  const result = await assembleDeliverableQuestions(provider, query());
+
+  assert.equal(result.questions.length, 20, 'the student still receives twenty');
+  assert.ok(!result.questions.some((q) => q.source.providerQuestionId === '52'), 'the broken question was not served');
+  assert.equal(result.rejections.length, 1);
+  assert.equal(result.rejections[0].providerQuestionId, '52');
+  assert.equal(result.rejections[0].reason, 'malformed_context',
+    'the reason must say the context was broken, not that it was never sent');
+  assert.ok(calls.length >= 2, 'the replacement was fetched');
+  // No cross-provider fallback: the top-up asks the same provider again. A
+  // single-question round uses `/q` rather than `/q/1`, so both shapes count.
+  assert.ok(calls.every((call) => call.path.startsWith('/api/v2/q')), 'a different provider was called');
+  assert.equal(calls[1].subject, 'physics', 'the top-up kept the requested subject');
+});
+
+test('discarding context never changes an answer key', async () => {
+  const { provider } = upstream([[workedSolution(53), duplicatedFraction(54), ...range(1, 18)]]);
+  const result = await assembleDeliverableQuestions(provider, query());
+
+  assert.equal(result.questions.find((q) => q.source.providerQuestionId === '53').correctOptionKey, 'A');
+  assert.equal(result.questions.find((q) => q.source.providerQuestionId === '54').correctOptionKey, 'B');
+  for (const question of result.questions) {
+    assert.equal(question.options.length, 4, 'the option list is untouched');
+  }
+});
+
+test('a genuine passage is still delivered beside the malformed ones', async () => {
+  const passage = {
+    id: 55,
+    question: 'According to the passage above, the narrator was',
+    option: { a: 'angry', b: 'calm', c: 'tired', d: 'afraid' },
+    answer: 'b',
+    hasPassage: 1,
+    section: 'The rain had not stopped for three days, and the road to the market had become a river of mud that swallowed every cart that tried it.',
+  };
+  const { provider } = upstream([[...range(1, 18), workedSolution(56), passage]]);
+  const result = await assembleDeliverableQuestions(provider, query());
+
+  const kept = result.questions.find((q) => q.source.providerQuestionId === '55');
+  assert.ok(kept.passage, 'a real passage must survive the same pipeline');
+  assert.match(kept.passage.body, /river of mud/);
+  assert.equal(kept.passage.kind, 'passage');
+});

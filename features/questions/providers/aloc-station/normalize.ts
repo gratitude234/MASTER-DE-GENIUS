@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { CanonicalQuestion } from "@/features/questions/types";
+import { contextDiagnostic } from "@/features/questions/context";
 import { cleanText, normalizeOptions, normalizeQuestionAssets, normalizeSection, resolveAnswerKey, type SectionContext } from "@/features/questions/providers/aloc/normalize";
 import type { ExamBody, QuestionAsset, QuestionDifficulty } from "@/types/domain";
 
@@ -64,7 +65,7 @@ function normalizeAssets(record: Record<string, unknown>, questionId: string): Q
  * Provider field names stop here: everything above the adapter sees only
  * `instruction` and `passage`.
  */
-function normalizeStationContext(record: Record<string, unknown>): SectionContext {
+function normalizeStationContext(record: Record<string, unknown>, prompt: string): SectionContext {
   const declared = cleanText(record.instruction ?? record.sectionInstruction ?? record.directive);
   const hasPassageFlag = record.hasPassage;
 
@@ -72,16 +73,21 @@ function normalizeStationContext(record: Record<string, unknown>): SectionContex
   // real source material, so any section text beside it is the instruction.
   const passageField = record.passage;
   if (passageField != null && passageField !== "") {
-    const fromPassage = normalizeSection(passageField, hasPassageFlag ?? 1);
-    const fromSection = normalizeSection(record.section, 0);
+    const fromPassage = normalizeSection(passageField, hasPassageFlag ?? 1, { prompt });
+    const fromSection = normalizeSection(record.section, 0, { prompt });
     return {
       instruction: declared || fromPassage.instruction || fromSection.instruction,
       passage: fromPassage.passage,
+      discardedContext: fromPassage.discardedContext,
     };
   }
 
-  const fromSection = normalizeSection(record.section, hasPassageFlag);
-  return { instruction: declared || fromSection.instruction, passage: fromSection.passage };
+  const fromSection = normalizeSection(record.section, hasPassageFlag, { prompt });
+  return {
+    instruction: declared || fromSection.instruction,
+    passage: fromSection.passage,
+    discardedContext: fromSection.discardedContext,
+  };
 }
 
 export function normalizeStationQuestion(
@@ -98,7 +104,7 @@ export function normalizeStationQuestion(
   const prompt = cleanText(record.text ?? record.questionHtml ?? record.question);
   if (!prompt) return { discarded: "empty_prompt" };
 
-  const material = normalizeStationContext(record);
+  const material = normalizeStationContext(record, prompt);
 
   const normalized = normalizeOptions(record.options ?? record.option, providerQuestionId);
   if (normalized.error) return { discarded: normalized.error };
@@ -116,6 +122,7 @@ export function normalizeStationQuestion(
       instruction: material.instruction,
       prompt,
       passage: material.passage,
+      discardedContext: contextDiagnostic(material.discardedContext),
       assets: normalizeAssets(record, providerQuestionId),
       options: normalized.options.map((option) => ({ ...option, id: `aloc-station:${providerQuestionId}:${option.key}` })),
       correctOptionKey,

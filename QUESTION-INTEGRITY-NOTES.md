@@ -360,3 +360,195 @@ New sessions are clean from the first request: the visual is preserved, and
 anything still incomplete is refused and replaced before freeze. No migration is
 required — `student_snapshot` is `jsonb` and the optional asset simply appears in
 new rows.
+
+---
+
+# Malformed question context — MathML, worked solutions and the PASSAGE card
+
+Two Mathematics questions were served with this in the blue card headed
+"PASSAGE":
+
+```
+Mathematics 2004                    Mathematics 2016
+M                                   12.02
+i                                   ×<!-- × -->
+d                                   20.06
+p
+o                                   26.04
+…                                   ×<!-- × -->
+= … (1,1)                           60.06
+```
+
+Neither is a passage. The 2004 one is the **worked solution**, and it ends in
+`(1, 1)` — which is option A. The card was showing the answer; the student only
+saw the top of it because the card scrolls.
+
+## 1. What the provider actually sent
+
+Both are ALOC Station, both in `section`, verified live by id on 2026-09-20:
+
+| | provider id | `section` |
+| --- | --- | --- |
+| Maths 2004 Q5 | `e2a44f19…` | 1,507 chars of MathML — the worked solution |
+| Maths 2016 Q32 | `ecdd92bb…` | 276 chars of MathML — the prompt's own fraction |
+
+```xml
+<math xmlns="http://www.w3.org/1998/Math/MathML">
+  <mi>M</mi>
+  <mi>i</mi>
+  <mi>d</mi>
+  …
+  <mo>&#x00D7;<!-- × --></mo>
+```
+
+It is MathJax output (`data-mjx-texclass` appears throughout), pretty-printed
+one element per line. Two upstream properties explain everything on screen:
+
+- **"Midpoint" is eight `<mi>` elements.** A multi-letter name in TeX maths mode
+  is a product of single-letter identifiers, so the converter emits one per
+  character. **The character fragmentation is upstream. MASTER did not create
+  it** — but MASTER turned the converter's indentation into content, because
+  `cleanText` preserves newlines and the text nodes were one per line.
+- **`<!-- × -->` annotates the entity beside it.** `<mo>&#x00D7;<!-- × --></mo>`
+  is a numeric entity plus a note saying which character it is.
+
+## 2. Three defects, stacked
+
+| # | where | defect |
+| --- | --- | --- |
+| 1 | upstream | `section` holds MathML, and for 13 records a worked solution |
+| 2 | `cleanText` | `TAG` requires a letter after `<`, so `<!--` never matched and comments reached students |
+| 3 | `normalizeSection` | length ≥ 40 was the *only* positive test for a passage |
+
+Defect 3 is the classification bug. "Long enough" is not evidence of prose, so
+any 40-character provider value became source material.
+
+## 3. Classification is now positive, and reads the raw value
+
+`features/questions/context.ts` — pure, synchronous, no AI, no network, beside
+`integrity.ts` for the same reasons.
+
+The decisive signal is read **before** `cleanText` runs: a `<math>` element in
+the raw value is machine-readable proof the field is mathematical markup, which
+no amount of inspecting the flattened text could establish as certainly.
+
+Ordered by what each verdict settles, answer safety first:
+
+| verdict | rule | live |
+| --- | --- | --- |
+| `solution` | begins `Solution:` / `SOLUTION` / `Solution.` | 13 |
+| `artefact` | markup or TeX residue survived cleaning | 1 |
+| `incomplete` | ends on an operator or `:` and is not prose | 0 |
+| `duplicate` | every meaningful token is already in the prompt | 12 |
+| `malformed` | ≥ 4 lines none carrying a word; or character fragmentation; or markup that left no material | 7 |
+| `given` | legitimate non-prose material — a formula, a table | 0 |
+| `passage` | prose | 70 |
+
+`duplicate` is tested before `malformed` because it says more: "this is broken"
+leaves open whether the question needed it, while "every token of this is
+already in the prompt" settles that nothing is lost by dropping it.
+
+### Character-fragment repair is a detector, not a repair
+
+`joinCharacterFragments` joins runs of ≥ 4 single-character lines, and only when
+the joined run contains a lowercase letter — which is exactly what keeps a
+legitimate `A / B / C / D` list from becoming "ABCD", since no list is written
+one *lowercase* letter per line. Letters and digits concatenate and any other
+character becomes its own token, so `M i d p o i n t =` joins to `Midpoint =`.
+
+Its output is used to **judge** a context and never to show one. MathML carries
+no inter-token spacing, so joining `<mi>C</mi><mi>l</mi>…` yields
+"ClassInterval", and the `<mtable>` rows that made it a table are gone either
+way. A repaired fragment reads like content while no longer meaning what the
+paper meant, which is worse than showing nothing.
+
+## 4. Whether a question survives without its context
+
+Nothing new decides this. The context is dropped and the question is re-judged
+by the existing `checkQuestionIntegrity`: a prompt that points at material the
+student cannot see was already its job. Measured against all 33 malformed
+contexts in the live corpus, it is right every time:
+
+- **31 kept** — "Find the midpoint of the line joining P(-3, 5) and Q(5, -3)."
+  carries its own numbers, and what was removed was the answer.
+- **2 rejected** — "Find the standard deviation of the above distribution."
+  (the `<mtable>` *was* the table) and "Find the value of x in the figure above"
+  (no `imageUrl` upstream). Both feed the existing bounded same-provider top-up.
+
+Two reason codes were added, and no existing one was renamed:
+`malformed_context` and `incomplete_context`. They re-label only the three
+verdicts a context could have satisfied — `missing_passage_context`,
+`missing_referenced_context`, `orphan_fragment`. A missing *diagram* stays
+`missing_referenced_asset`, because the provider sent no image either way and
+saying otherwise would send an admin after the wrong defect. The re-labelling
+never changes a verdict, only its name.
+
+## 5. PASSAGE is reserved for prose
+
+`QuestionPassage` gained an optional `kind`. Absent — which is every snapshot
+frozen before this — means `"passage"`, so history renders exactly as it did and
+no migration is needed (`student_snapshot` is `jsonb`).
+
+`contextHeading()` and `isProseContext()` are the single source of the label,
+used by Practice, the Mock runner, answer review and the admin inspector, for
+the same reason one component renders every visual: four copies is how a formula
+ends up called a passage on one screen and something else on another. Non-prose
+material is still **shown** — losing a formula would be its own defect — under
+"Given" rather than "Passage".
+
+`MIN_PASSAGE_LENGTH` no longer discards short material that states a relation or
+carries data: "v = u + at" is not a short passage, it is a different kind of
+thing. It still discards a bare label, which is how Station's occasional
+`section: "Biology"` stays out.
+
+## 6. Corpus audit
+
+Read-only, over all 6,665 frozen questions (3,605 practice, 3,060 mock).
+
+| | |
+| --- | --- |
+| frozen rows carrying a context | 458 |
+| distinct contexts | 103 |
+| distinct contexts discarded | 33 — **all Mathematics, all ALOC Station** |
+| frozen rows affected | 44 |
+| rows whose card showed a worked solution | 18 |
+| rows leaking the correct option text | **11** |
+| distinct contexts kept | 70 — English 58, Civic 6, Commerce 3, Accounts 2, Economics 1 |
+| genuine passages wrongly discarded | **0** |
+| malformed contexts still shown | **0** |
+
+Years span 2000–2023; no year is unaffected and none dominates. Every malformed
+context is a `<math>` document, and no non-MathML context is discarded.
+
+## 7. Existing sessions
+
+Nothing is mutated. A completed session's score was computed from what the
+student actually saw, and rewriting it would make the score unexplainable.
+
+| | |
+| --- | --- |
+| sessions/attempts holding an affected question | 15 |
+| practice in progress | 5 |
+| practice completed | 5 |
+| mock in progress | 1 |
+| mock submitted | 4 |
+| sessions that were showing a worked solution | 10, of which **4 still in progress** |
+
+New sessions are clean from the first request. For the four in-progress sessions
+still displaying a worked answer, the recommendation is **not** to rewrite the
+snapshot but to let them finish: the answer was already visible, so removing it
+mid-session changes the question under the student without undoing the exposure,
+and grading is unaffected either way. If that is judged unacceptable, the safe
+action is to void those four sessions rather than edit them — a decision for the
+product owner, not a migration.
+
+## 8. Known, unfixed: `<sup>` in prompts
+
+Out of scope here and reported rather than bundled, because it is a different
+defect with a different cause. Station sends `Integrate (x<sup>2</sup>-√x)/x`,
+`cleanText` strips the tag, and the student reads `x2` where the paper said
+`x²`. 41 distinct Mathematics prompts in the live corpus show this shape. A
+deterministic fix exists — map `<sup>`/`<sub>` to Unicode superscripts when the
+content is a digit or sign — but it rewrites prompt text across the corpus and
+touches answer-option matching, so it deserves its own change and its own
+verification.

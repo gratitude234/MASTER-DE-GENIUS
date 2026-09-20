@@ -21,6 +21,7 @@ import type {
 } from "@/features/exams/types";
 import type { QuestionOption } from "@/types/domain";
 
+import { isProseContext } from "@/features/questions/context";
 import { useOfflineSession } from "@/features/offline/use-session";
 import { SessionStatus } from "@/components/pwa/session-status";
 import { SyncNotice } from "@/components/pwa/sync-notice";
@@ -417,7 +418,9 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
                 className="mb-[18px] flex w-full items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-left transition hover:border-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
               >
                 <span>
-                  <span className={cn("block", typography.eyebrow, "tracking-[0.06em] text-brand-500")}>Comprehension passage</span>
+                  <span className={cn("block", typography.eyebrow, "tracking-[0.06em] text-brand-500")}>
+                    {isProseContext(question.passage) ? "Comprehension passage" : "Given information"}
+                  </span>
                   <span className="mt-0.5 block text-xs text-slate-800">Open without losing your answer</span>
                 </span>
                 <span className="shrink-0 text-xs font-bold text-brand-500">View →</span>
@@ -509,10 +512,14 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
         <Sheet
           open={passageOpen}
           onClose={() => setPassageOpen(false)}
-          title={question.passage.title || "Read the passage carefully"}
+          title={question.passage.title || (isProseContext(question.passage) ? "Read the passage carefully" : "Given information")}
           // A passage that is already titled "Comprehension passage" would
           // otherwise have the label printed under itself.
-          description={question.passage.title === "Comprehension passage" ? undefined : "Comprehension passage"}
+          description={
+            question.passage.title === "Comprehension passage"
+              ? undefined
+              : isProseContext(question.passage) ? "Comprehension passage" : "Given information"
+          }
           size="full"
           footer={
             <Button type="button" variant="dark" size="lg" fullWidth onClick={() => setPassageOpen(false)}>

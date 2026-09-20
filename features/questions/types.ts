@@ -1,3 +1,4 @@
+import type { QuestionContextKind } from "@/features/questions/context";
 import type {
   ExamBody,
   QuestionAsset,
@@ -20,6 +21,19 @@ export interface QuestionPassage {
   id: string;
   title?: string | null;
   body: string;
+  /**
+   * What this context actually is.
+   *
+   * `"passage"` is prose the student must read and is what the UI labels
+   * "Passage". `"given"` is legitimate non-prose material the question needs —
+   * a formula, a table, a set of values — which is shown in the same block
+   * under a neutral label, because calling a formula a passage is what let a
+   * flattened MathML equation onto the screen as though it were an extract.
+   *
+   * Optional and absent from every snapshot frozen before this existed, which
+   * read as `"passage"` and render exactly as they always did.
+   */
+  kind?: QuestionContextKind;
 }
 
 /**
@@ -47,6 +61,16 @@ export interface CanonicalQuestion {
   instruction?: string | null;
   prompt: string;
   passage?: QuestionPassage | null;
+  /**
+   * Context the adapter refused rather than showed — a worked solution, an
+   * equation flattened out of MathML, material the prompt already carries.
+   *
+   * It exists so the integrity validator can say *why* a question lost its
+   * context and the admin inspector can show it, and it carries no examination
+   * content: only the classification and a short diagnostic phrase. The refused
+   * text itself is dropped at the adapter and never travels.
+   */
+  discardedContext?: { kind: QuestionContextKind; detail?: string } | null;
   assets: QuestionAsset[];
   options: QuestionOption[];
   correctOptionKey: QuestionOption["key"];

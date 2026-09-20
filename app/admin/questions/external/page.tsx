@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { Select } from "@/components/ui/select";
 import { buttonClasses, fieldClasses } from "@/components/ui/variants";
+import { contextHeading } from "@/features/questions/context";
 import { blockQuestionAction, liftQuestionBlockAction } from "@/features/admin/actions/operations";
 import { loadAcademicReport } from "@/features/admin/analytics";
 import { can, requireAdminPermission } from "@/features/admin/auth";
@@ -85,7 +86,22 @@ export default async function ExternalQuestionsPage({ searchParams }: { searchPa
                   {inspection.activeBlock ? <Badge tone="danger">Blocked</Badge> : <Badge tone="success">Being served</Badge>}
                   <span className="text-[11.5px] text-slate-500">Last served {formatDateTime(inspection.lastServedAt)}</span>
                 </div>
-                {inspection.question.passage?.body ? <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-[12px] text-slate-700">{inspection.question.passage.body}</p> : null}
+                {inspection.question.passage?.body ? (
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500">{contextHeading(inspection.question.passage)}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-[12px] text-slate-700">{inspection.question.passage.body}</p>
+                  </div>
+                ) : null}
+                {/* Context that arrived and was refused is not the same as no
+                    context at all. An admin looking at a rejected question needs
+                    to see which happened; the refused text itself is never
+                    carried, because it is often the worked answer. */}
+                {inspection.question.discardedContext ? (
+                  <p className="text-[11.5px] text-warning-800">
+                    Context discarded ({inspection.question.discardedContext.kind})
+                    {inspection.question.discardedContext.detail ? `: ${inspection.question.discardedContext.detail}` : null}
+                  </p>
+                ) : null}
                 {inspection.question.instruction ? <p className="whitespace-pre-wrap text-[12px] text-slate-600">{inspection.question.instruction}</p> : null}
                 {/* The inspector must show exactly what the student saw. Without
                     the visual, an admin reading "The histogram above represents…"

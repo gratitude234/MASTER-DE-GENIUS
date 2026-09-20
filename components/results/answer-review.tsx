@@ -6,6 +6,7 @@ import { Select } from "@/components/ui/select";
 import { typography } from "@/components/ui/variants";
 import type { Outcome, ReviewItem } from "@/features/results/grading";
 import { cn } from "@/lib/utils";
+import { isProseContext } from "@/features/questions/context";
 import { AiQuestionExplanation } from "@/components/ai/question-explanation";
 import { QuestionVisuals } from "@/components/questions/question-visual";
 import type { ResultKind } from "@/features/results/grading";
@@ -105,7 +106,7 @@ export function AnswerReview({
               {item.question.passage ? (
                 <details className="group/passage rounded-xl bg-slate-50 p-3">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded text-[12.5px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2">
-                    View passage
+                    {isProseContext(item.question.passage) ? "View passage" : "View given information"}
                     <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open/passage:rotate-180 motion-reduce:transition-none" />
                   </summary>
                   <p className="mt-3 whitespace-pre-wrap text-[13px] leading-[1.7] text-slate-800">{item.question.passage.body}</p>
