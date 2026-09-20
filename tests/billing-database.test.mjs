@@ -231,6 +231,38 @@ test('a payment already marked failed can never later be applied', async () => {
   } finally { await db.close(); }
 });
 
+test('a pending payment verified as reversed closes as reversed and grants nothing', async () => {
+  const db = await freshDb();
+  try {
+    await openCheckout(db, ALICE, 'master_30', 'mdg_ref_reversed_p');
+
+    /*
+     * The other half of the reversal story. The test below proves a *successful*
+     * payment is never demoted; this one proves a payment that is still pending
+     * does not simply stay pending for ever when Paystack says it was reversed.
+     * Nothing else will ever close it — there is no further event coming.
+     */
+    const result = await db.query(
+      `select * from mark_billing_payment_unsuccessful($1,'reversed','verified_status_reversed',null,'reversed')`,
+      ['mdg_ref_reversed_p'],
+    );
+    assert.equal(result.rows[0].outcome, 'recorded');
+
+    const { rows } = await db.query(
+      `select status, failure_reason, provider_status from payment_transactions where reference = $1`,
+      ['mdg_ref_reversed_p'],
+    );
+    assert.equal(rows[0].status, 'reversed', 'distinguishable from a decline in the ledger');
+    assert.equal(rows[0].provider_status, 'reversed');
+    assert.equal((await entitlementOf(db, ALICE)).tier, 'free');
+
+    // And it is terminal: a later application cannot resurrect it.
+    const applied = await applyPayment(db, 'mdg_ref_reversed_p', { amountKobo: 150000 });
+    assert.equal(applied.outcome, 'not_pending');
+    assert.equal((await entitlementOf(db, ALICE)).tier, 'free');
+  } finally { await db.close(); }
+});
+
 test('an applied payment is never demoted by a later failure or reversal event', async () => {
   const db = await freshDb();
   try {

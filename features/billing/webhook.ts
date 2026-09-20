@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  isMasterPaymentReference,
   verifyPaystackTransaction,
   type PaystackEnvironment,
   type VerifiedTransaction,
@@ -98,11 +99,31 @@ export interface WebhookDeps {
   environment: PaystackEnvironment;
 }
 
-interface ParsedEvent {
+export interface ParsedEvent {
   event: string;
   reference: string | null;
   /** Paystack's own event/transaction id, used only for idempotency. */
   eventId: string;
+}
+
+/**
+ * The local status that closes out a pending payment for a given verified
+ * upstream status.
+ *
+ * `reversed` used to fall into the `failed` bucket here, which was wrong in a
+ * way that mattered: the payment row carried a status the ledger could not
+ * distinguish from a card decline, and the reconciliation path did not close it
+ * at all. The schema has always had `reversed`; this is what puts it to use.
+ *
+ * Note what this is *not*: it never demotes an already-successful payment.
+ * `mark_billing_payment_unsuccessful` only moves a `pending` row, so a reversal
+ * arriving after access was granted is still recorded for a human rather than
+ * revoking a student's access automatically.
+ */
+export function unsuccessfulStatusFor(verifiedStatus: string): "failed" | "abandoned" | "reversed" {
+  if (verifiedStatus === "abandoned") return "abandoned";
+  if (verifiedStatus === "reversed") return "reversed";
+  return "failed";
 }
 
 /**
@@ -186,6 +207,24 @@ export async function processPaystackEvent(payload: unknown, deps: WebhookDeps):
   }
 
   /*
+   * A defensive invariant, not a security control.
+   *
+   * Every payment row this application has ever written carries a reference
+   * minted by `generatePaymentReference()`, and `open_billing_checkout` is the
+   * only thing that inserts one — so a reference outside the `mdg_` namespace
+   * cannot possibly resolve to a local payment. A transaction started from the
+   * Paystack dashboard (a payment link, an invoice) is exactly that case.
+   *
+   * The real control is still `apply_successful_payment`, which answers
+   * `not_found` for a reference it has no record of. This only stops such an
+   * event from spending a Paystack verification call to reach the same answer,
+   * and states the namespace rule in one readable place.
+   */
+  if (!isMasterPaymentReference(parsed.reference)) {
+    return finish({ outcome: "ignored", detail: "foreign_reference" });
+  }
+
+  /*
    * Refunds, reversals and disputes are recorded and left for a human.
    *
    * Paystack's contract for these is not verified end to end here, and the
@@ -222,14 +261,21 @@ export async function processPaystackEvent(payload: unknown, deps: WebhookDeps):
   if (verified.reference !== parsed.reference) {
     return finish({ outcome: "rejected", detail: "reference_mismatch" });
   }
+  /*
+   * The body claimed success and Paystack's own record disagrees. The local row
+   * is closed out with the status Paystack actually reports — including
+   * `reversed`, which a signed `charge.success` can legitimately verify as —
+   * rather than being left pending for a settlement that will never arrive.
+   */
   if (verified.status !== "success") {
+    const status = unsuccessfulStatusFor(verified.status);
     await deps.markUnsuccessful({
       reference: parsed.reference,
-      status: verified.status === "abandoned" ? "abandoned" : "failed",
+      status,
       reason: `verified_status_${verified.status}`.slice(0, 60),
       providerStatus: verified.status,
     });
-    return finish({ outcome: "ignored", detail: "not_successful_upstream" });
+    return finish({ outcome: "ignored", detail: `not_successful_upstream_${status}` });
   }
   if (verified.currency !== "NGN") {
     return finish({ outcome: "rejected", detail: "currency_not_ngn" });

@@ -66,6 +66,17 @@ export function appUrl(): string {
 }
 
 /**
+ * The namespace every MASTER reference is minted into.
+ *
+ * Declared once, here, beside the function that mints it, so the rule and its
+ * only producer cannot drift apart. `open_billing_checkout` is the sole insert
+ * into `payment_transactions`, and it is always handed a reference from
+ * `generatePaymentReference()` — which makes "starts with `mdg_`" a true
+ * invariant of every payment row, not merely a convention.
+ */
+const MASTER_REFERENCE_PREFIX = "mdg_";
+
+/**
  * A reference that is unguessable as well as unique.
  *
  * It is the only identifier trusted to name a payment, so it is generated with
@@ -73,7 +84,29 @@ export function appUrl(): string {
  * enumerate other students' transactions at the verification endpoint.
  */
 export function generatePaymentReference(): string {
-  return `mdg_${Date.now().toString(36)}_${randomBytes(16).toString("hex")}`;
+  return `${MASTER_REFERENCE_PREFIX}${Date.now().toString(36)}_${randomBytes(16).toString("hex")}`;
+}
+
+/**
+ * Whether a reference was minted by this application.
+ *
+ * This answers "could this possibly be one of ours?", never "may this grant
+ * access?". Only a locally created `payment_transactions` row can do the
+ * latter, and `apply_successful_payment` still refuses anything it has no
+ * record of — so a reference that merely *looks* like ours buys nothing. It is
+ * a cheap, readable invariant in front of the real authority, not a substitute
+ * for it.
+ *
+ * Deliberately not derived from Paystack metadata: `product: "master_degenius"`
+ * is echoed back from whatever was sent at initialization, so a payload could
+ * claim it. The prefix is on an identifier this server generated and stored.
+ */
+export function isMasterPaymentReference(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    value.startsWith(MASTER_REFERENCE_PREFIX) &&
+    value.length > MASTER_REFERENCE_PREFIX.length
+  );
 }
 
 /**

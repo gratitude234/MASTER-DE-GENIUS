@@ -18,6 +18,12 @@ export const dynamic = "force-dynamic";
  *
  * A rejected signature produces a 401 with no detail. Telling an unauthenticated
  * caller *why* their signature failed is a free oracle.
+ *
+ * This endpoint serves exactly one Paystack business — MASTER's own — and does
+ * nothing but decide MASTER billing events. It is not a proxy and forwards
+ * nothing anywhere. A valid signature still grants nobody anything on its own:
+ * everything below re-verifies the transaction against Paystack's own API and
+ * resolves it through a payment row this server created.
  */
 export async function POST(request: Request) {
   if (!paystackConfigured()) {

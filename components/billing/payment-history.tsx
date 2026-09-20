@@ -1,5 +1,6 @@
 import { Receipt } from "lucide-react";
 
+import { PaymentRecheck } from "@/components/billing/payment-recheck";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { radius, typography } from "@/components/ui/variants";
@@ -88,6 +89,13 @@ export function PaymentHistory({ payments }: { payments: PaymentHistoryEntry[] }
                 </div>
               ) : null}
             </dl>
+
+            {/*
+              Offered only on the few recent pending payments the server marked
+              — never on a settled one, and never on a pile of old abandoned
+              checkouts. The button asks the server; the server asks Paystack.
+            */}
+            {payment.recoverable ? <PaymentRecheck reference={payment.reference} /> : null}
           </li>
         );
       })}

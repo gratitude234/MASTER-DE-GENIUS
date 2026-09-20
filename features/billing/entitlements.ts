@@ -141,6 +141,55 @@ export interface PaymentHistoryEntry {
   paidAt: string | null;
   createdAt: string;
   entitlementExpiresAt: string | null;
+  /** True when the billing page offers this payment a re-check. See below. */
+  recoverable: boolean;
+}
+
+/**
+ * How stale a pending payment may be and still be worth re-checking.
+ *
+ * A payment that was paid but never settled locally — the student closed the
+ * tab before the callback ran and the webhook never arrived — stays pending for
+ * ever otherwise. Two weeks is long enough to cover a student who only noticed
+ * days later, and short enough that the offer disappears rather than becoming a
+ * permanent button on abandoned checkouts.
+ */
+const RECOVERABLE_PENDING_WINDOW_MS = 14 * 86_400_000;
+
+/**
+ * At most this many payments carry the offer.
+ *
+ * Each re-check costs one Paystack verification, so the bound is on the page
+ * rather than on the student's patience. Three is more than a genuinely stuck
+ * student ever has; a hundred abandoned checkouts get nothing.
+ */
+const RECOVERABLE_PENDING_LIMIT = 3;
+
+/**
+ * Marks the few recent pending payments the billing page may offer to re-check.
+ *
+ * This decides only what the page *offers*. It grants nothing and verifies
+ * nothing: the re-check itself goes through `/api/billing/verify`, which
+ * authenticates the student, scopes the reference to their own account, asks
+ * Paystack directly, and applies through `apply_successful_payment` like every
+ * other path. A pending row is never evidence of payment on its own.
+ */
+export function markRecoverablePayments<T extends { status: string; createdAt: string }>(
+  entries: T[],
+  now: Date = new Date(),
+): (T & { recoverable: boolean })[] {
+  let offered = 0;
+  const floor = now.getTime() - RECOVERABLE_PENDING_WINDOW_MS;
+
+  return entries.map((entry) => {
+    if (entry.status !== "pending" || offered >= RECOVERABLE_PENDING_LIMIT) {
+      return { ...entry, recoverable: false };
+    }
+    const created = Date.parse(entry.createdAt);
+    const recoverable = Number.isFinite(created) && created >= floor;
+    if (recoverable) offered += 1;
+    return { ...entry, recoverable };
+  });
 }
 
 export interface BillingSummary {
@@ -181,20 +230,22 @@ export async function getBillingSummary(userId: string): Promise<BillingSummary>
     return { entitlement, payments: [] };
   }
 
-  const payments: PaymentHistoryEntry[] = (data ?? []).map((row) => ({
-    id: row.id,
-    planSlug: row.plan_slug,
-    planName: planNames.get(row.plan_slug) ?? row.plan_slug,
-    reference: row.reference,
-    maskedReference: maskReference(row.reference),
-    amountKobo: row.amount_kobo,
-    currency: row.currency,
-    status: row.status,
-    accessDays: row.access_days,
-    paidAt: row.paid_at,
-    createdAt: row.created_at,
-    entitlementExpiresAt: row.entitlement_expires_at,
-  }));
+  const payments: PaymentHistoryEntry[] = markRecoverablePayments(
+    (data ?? []).map((row) => ({
+      id: row.id,
+      planSlug: row.plan_slug,
+      planName: planNames.get(row.plan_slug) ?? row.plan_slug,
+      reference: row.reference,
+      maskedReference: maskReference(row.reference),
+      amountKobo: row.amount_kobo,
+      currency: row.currency,
+      status: row.status,
+      accessDays: row.access_days,
+      paidAt: row.paid_at,
+      createdAt: row.created_at,
+      entitlementExpiresAt: row.entitlement_expires_at,
+    })),
+  );
 
   return { entitlement, payments };
 }

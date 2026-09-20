@@ -17,6 +17,12 @@ registerHooks({
     if (specifier === 'next/link') {
       return { url: new URL('./stubs/next-link.mjs', import.meta.url).href, shortCircuit: true };
     }
+    if (specifier === 'next/navigation') {
+      return {
+        url: 'data:text/javascript,' + encodeURIComponent('export function useRouter(){ return { push(){}, refresh(){} }; }'),
+        shortCircuit: true,
+      };
+    }
     return next(specifier, context);
   },
 });
@@ -596,6 +602,34 @@ test('a transaction that Paystack does not call successful activates nothing', a
   }
 });
 
+test('a verified reversal closes the payment as reversed, not as a card decline', async () => {
+  /*
+   * A signed `charge.success` whose server-to-server verification comes back
+   * `reversed` used to be filed as a generic failure. The schema has always had
+   * a `reversed` status; storing anything else made a reversal indistinguishable
+   * from a decline in the ledger, which is exactly the distinction a dispute
+   * needs months later.
+   */
+  const { deps, calls } = webhookHarness({
+    async verifyTransaction(reference) {
+      return { reference, status: 'reversed', amountKobo: 150000, currency: 'NGN', environment: 'test', providerTransactionId: '1', paidAt: null };
+    },
+  });
+
+  const result = await processPaystackEvent(successEvent(), deps);
+
+  assert.equal(result.outcome, 'ignored');
+  assert.equal(result.detail, 'not_successful_upstream_reversed');
+  assert.equal(calls.applied.length, 0, 'a reversal never grants access');
+  assert.deepEqual(calls.unsuccessful, [{
+    reference: 'mdg_ref_hook_1',
+    status: 'reversed',
+    reason: 'verified_status_reversed',
+    providerStatus: 'reversed',
+  }]);
+  assert.equal(calls.finished.length, 1, 'the delivery reaches a terminal decision');
+});
+
 test('a charge.failed event records the failure and grants nothing', async () => {
   const { deps, calls } = webhookHarness();
   const result = await processPaystackEvent(
@@ -668,6 +702,44 @@ test('an unrecognised reference is acknowledged rather than retried', async () =
   const result = await processPaystackEvent(successEvent(), deps);
   assert.equal(result.outcome, 'ignored');
   assert.equal(result.detail, 'unknown_reference');
+});
+
+test('a reference outside this application\'s namespace never reaches the entitlement', async () => {
+  /*
+   * `open_billing_checkout` is the only insert into `payment_transactions`, and
+   * it is always handed a reference from `generatePaymentReference()` — so
+   * "starts with mdg_" is a true invariant of every payment row, not a
+   * convention. A transaction started from the Paystack dashboard (a payment
+   * link, an invoice, a manual charge) carries a Paystack-minted reference and
+   * therefore cannot correspond to any row here.
+   *
+   * The database still refuses such a reference with `not_found`; this stops it
+   * spending a Paystack verification call to arrive at the same answer, and
+   * states the namespace rule in one place.
+   */
+  for (const reference of ['T1234567890', 'invoice_99', 'MDG_uppercase', 'mdg', 'mdg_']) {
+    const { deps, calls } = webhookHarness();
+    const result = await processPaystackEvent(successEvent(reference), deps);
+
+    assert.equal(result.outcome, 'ignored', reference);
+    assert.equal(result.detail, 'foreign_reference', reference);
+    assert.equal(calls.verified.length, 0, `${reference} costs no Paystack call`);
+    assert.equal(calls.applied.length, 0, `${reference} must never reach the entitlement`);
+    assert.equal(calls.unsuccessful.length, 0, `${reference} is not ours to close either`);
+  }
+
+  // And the namespace alone is never enough: a hand-written mdg_ reference
+  // still has to resolve to a real local payment.
+  const attempted = [];
+  const { deps } = webhookHarness({
+    async applyPayment(input) {
+      attempted.push(input);
+      return { outcome: 'not_found', userId: null, expiresAt: null };
+    },
+  });
+  const invented = await processPaystackEvent(successEvent('mdg_invented_by_hand'), deps);
+  assert.equal(invented.detail, 'unknown_reference');
+  assert.equal(attempted.length, 1, 'the database remains the authority that refuses it');
 });
 
 test('a verification outage asks for a retry instead of guessing', async () => {
@@ -1062,6 +1134,7 @@ test('payment history shows the receipt and never the provider details behind it
       paidAt: '2026-09-08T10:00:00.000Z',
       createdAt: '2026-09-08T09:59:00.000Z',
       entitlementExpiresAt: '2026-12-07T10:00:00.000Z',
+      recoverable: false,
     }],
   }));
 
@@ -1071,6 +1144,34 @@ test('payment history shows the receipt and never the provider details behind it
   assert.ok(html.includes('90 days'));
   assert.ok(html.includes('mdg_abc1…cdef'), 'the reference is shortened');
   assert.ok(!html.includes('0123456789abcdef'), 'the full reference is not printed');
+  assert.ok(!html.includes('Check this payment'), 'a settled payment is not offered a re-check');
+});
+
+test('a stuck pending payment is offered a re-check, without printing its reference', async () => {
+  const { PaymentHistory } = await import('../components/billing/payment-history.tsx');
+  const html = renderToStaticMarkup(React.createElement(PaymentHistory, {
+    payments: [{
+      id: 'p2',
+      planSlug: 'master_30',
+      planName: 'Master Monthly',
+      reference: 'mdg_stuck123_0123456789abcdef0123456789abcdef',
+      maskedReference: 'mdg_stuc…cdef',
+      amountKobo: 150000,
+      currency: 'NGN',
+      status: 'pending',
+      accessDays: 30,
+      paidAt: null,
+      createdAt: '2026-09-18T09:59:00.000Z',
+      entitlementExpiresAt: null,
+      // Set by the server, which bounds how many payments and how old they may
+      // be. The component does not decide this for itself.
+      recoverable: true,
+    }],
+  }));
+
+  assert.ok(html.includes('Pending'), 'the state is still stated plainly');
+  assert.ok(html.includes('Check this payment'), 'a stuck payment has a way out');
+  assert.ok(!html.includes('0123456789abcdef'), 'the full reference is still not printed');
 });
 
 test('an empty history explains itself rather than showing a blank panel', async () => {

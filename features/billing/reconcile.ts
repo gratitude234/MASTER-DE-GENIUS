@@ -7,6 +7,7 @@ import {
   PaystackError,
   verifyPaystackTransaction,
 } from "@/features/billing/paystack";
+import { unsuccessfulStatusFor } from "@/features/billing/webhook";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -132,11 +133,21 @@ export async function reconcilePayment(userId: string, rawReference: unknown): P
     return { ...base, state: "abandoned", expiresAt: null, activated: false };
   }
 
-  if (verified.status === "failed") {
+  /*
+   * `failed` and `reversed` are both terminal and both close the row.
+   *
+   * `reversed` used to fall through to the generic "still settling" answer
+   * below, which left the payment pending for ever: Paystack would never send
+   * another event for it, so nothing would ever close it, and the student was
+   * left watching a transaction that had already been reversed upstream. The
+   * student-facing state stays `failed` — the same answer a stored `reversed`
+   * row has always produced above — while the ledger records `reversed`.
+   */
+  if (verified.status === "failed" || verified.status === "reversed") {
     await admin.rpc("mark_billing_payment_unsuccessful", {
       p_reference: reference,
-      p_status: "failed",
-      p_reason: "verified_status_failed",
+      p_status: unsuccessfulStatusFor(verified.status),
+      p_reason: `verified_status_${verified.status}`,
       p_provider_status: verified.status,
     });
     return { ...base, state: "failed", expiresAt: null, activated: false };
