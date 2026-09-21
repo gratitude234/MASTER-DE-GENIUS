@@ -554,11 +554,16 @@ export function PracticeSetup({
           loadingLabel="Building session…"
           iconBefore={<Clock3 className="h-4 w-4" aria-hidden="true" />}
         >
-          {blockedByAllowance
-            ? practiceUsage.activeSession
+          {!blockedByAllowance
+            ? `Start ${questionCount}-question session`
+            : practiceUsage.activeSession
               ? "Today’s session is already in progress"
-              : "Today’s free practice session has been used"
-            : `Start ${questionCount}-question session`}
+              // "free" belongs only to the Free plan. A Master student who has
+              // somehow reached their own daily limit is told the truth about
+              // theirs, not sold a plan they already have.
+              : isFree
+                ? "Today’s free practice session has been used"
+                : "You’ve started every practice session for today"}
         </Button>
         <p className="mt-2 text-center text-[11px] text-slate-500">
           Your question set is frozen when the session starts, so refreshes and resumes stay consistent.
@@ -613,12 +618,35 @@ function FreePracticeStatus({ usage }: { usage: PracticeUsage }) {
           session uses today’s.
         </p>
       ) : activeSession ? (
-        <AllowanceNotice
-          emphasis="subtle"
-          message="Finish the session you started — resuming it never uses another."
-          upgrade={PRACTICE_SESSION_IN_PROGRESS.upgrade}
-          source="practice_session_in_progress"
-        />
+        /*
+         * The way back in, not a wall.
+         *
+         * The resume card above this is scoped to the exam the student is
+         * looking at, and the allowance is not: a student preparing for JAMB and
+         * WAEC can be told "already in progress" on a screen whose own resume
+         * card is empty. This link is the session the *allowance* is holding,
+         * whichever exam it belongs to, so "in progress" is never a dead end.
+         */
+        <div className="space-y-2">
+          <Link
+            href={`/practice/session/${activeSession.id}`}
+            className="flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2.5 transition hover:border-brand-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
+          >
+            <span className="min-w-0">
+              <span className="block text-[13px] font-bold text-slate-950">Resume {activeSession.subjectName}</span>
+              <span className="mt-0.5 block text-[11.5px] text-slate-600">
+                {activeSession.answeredCount} of {activeSession.questionCount} answered · resuming never uses another session
+              </span>
+            </span>
+            <span aria-hidden="true" className="shrink-0 text-xs font-bold text-brand-500">Continue →</span>
+          </Link>
+          <AllowanceNotice
+            emphasis="subtle"
+            message={PRACTICE_SESSION_IN_PROGRESS.message}
+            upgrade={PRACTICE_SESSION_IN_PROGRESS.upgrade}
+            source="practice_session_in_progress"
+          />
+        </div>
       ) : (
         <AllowanceNotice
           message={exhausted.message}

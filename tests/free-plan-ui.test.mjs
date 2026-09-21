@@ -302,14 +302,17 @@ test('the offered sizes are derived from the plan ceiling, never hard-coded', ()
   assert.deepEqual(allowedQuestionCounts(25), [10, 20, 25], 'the ceiling is always reachable');
 });
 
-test('a session already in progress offers Resume, and does not claim a loss', () => {
+test('8. a session already in progress offers Resume, and does not claim a loss', () => {
   const usage = freeUsage({ practice: { used: 1, activeSession: ACTIVE_PRACTICE } }).practice;
   const markup = html(h(PracticeSetup, setupProps(usage)));
 
   assert.ok(markup.includes('Today’s practice session is already in progress'));
-  assert.ok(markup.includes('Finish the session you started — resuming it never uses another.'));
+  // The way back in is on the screen, whichever exam the session belongs to.
+  assert.ok(markup.includes('href="/practice/session/session-1"'));
+  assert.ok(markup.includes('Resume Mathematics'));
+  assert.ok(markup.includes('6 of 20 answered · resuming never uses another session'));
   assert.ok(upgradeHrefs(markup).includes('/pricing?source=practice_session_in_progress#plans'));
-  assert.ok(!markup.includes('has been used'));
+  assert.ok(!markup.includes('has been used'), 'nothing is lost, so nothing says it is');
 });
 
 test('5. none left: the exhausted message, a real Upgrade button, and no way to start', () => {
@@ -459,17 +462,27 @@ test('51. every upgrade source reaches the plan cards on /pricing, and nothing e
   }
 });
 
-test('no hard-coded Upgrade destination bypasses the shared link', () => {
+test('48. no hard-coded Upgrade destination bypasses the shared link', () => {
   const files = [
-    'components/billing/free-plan-card.tsx', 'components/billing/plan-status.tsx', 'components/practice/practice-setup.tsx',
-    'components/practice/practice-session-runner.tsx', 'components/exam/mock-exam-setup.tsx', 'components/ai/question-explanation.tsx',
+    'components/billing/free-plan-card.tsx', 'components/billing/plan-status.tsx', 'components/billing/upgrade-prompt.tsx',
+    'components/practice/practice-setup.tsx', 'components/practice/practice-session-runner.tsx',
+    'components/exam/mock-exam-setup.tsx', 'components/ai/question-explanation.tsx',
+    'components/home/home-header.tsx', 'components/home/resume-card.tsx', 'components/home/progress-summary-card.tsx',
+    'components/home/continue-learning-card.tsx', 'components/home/quick-actions.tsx', 'app/(student)/home/page.tsx',
     'app/(student)/progress/results/[kind]/[id]/page.tsx', 'app/(student)/progress/mistakes/page.tsx', 'app/(student)/me/page.tsx',
   ];
   for (const file of files) {
     const source = readFileSync(file, 'utf8');
-    assert.ok(!/href="\/pricing/.test(source), `${file} must use UpgradeLink, not a literal /pricing link`);
-    assert.ok(!/[^\w]4 free|2 free mocks|2 free MASTER/.test(source), `${file} must not hard-code an allowance`);
+    assert.ok(!/href="\/pricing/.test(source), file + ' must use UpgradeLink, not a literal /pricing link');
+    assert.ok(!/[^\w]1 free practice|2 free mocks|2 free MASTER/.test(source), file + ' must not hard-code an allowance');
   }
+
+  // The shared link is the only thing that knows the destination.
+  assert.equal(upgrade.upgradeHref('dashboard'), '/pricing?source=dashboard#plans');
+  assert.equal(upgrade.PLANS_PATH, '/pricing');
+  assert.equal(upgrade.PLANS_ANCHOR, 'plans');
+  assert.equal(upgrade.parseUpgradeSource('practice_one_remaining'), null, 'the cancelled source is gone');
+  assert.ok(upgrade.UPGRADE_SOURCES.includes('practice_session_in_progress'));
 });
 
 test('54. singular and plural copy is correct at every count', () => {
