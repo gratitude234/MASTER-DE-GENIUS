@@ -6,12 +6,64 @@ import {
   readPracticeAllowance,
   type PracticeMeter,
 } from "@/features/billing/quota";
+import { readStudentSnapshot } from "@/features/questions/snapshot";
+import { logSessionOpenFailure, type SessionKind } from "@/features/sessions/diagnostics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { grade, mistakeBank, outcome, type LearningResult, type ResultKind, type ReviewItem } from "./grading";
 import type { StudentQuestion } from "@/features/questions/types";
 import type { Json } from "@/types/database";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * One frozen snapshot on a results page, read through the shared compatibility
+ * layer — and never allowed to take the result down with it.
+ *
+ * A result is history. The score, the answer and the correct key all come from
+ * their own columns and are still exactly right when a snapshot is unreadable,
+ * so refusing the whole page would delete a student's record of a paper they
+ * actually sat. An unreadable question is therefore logged with its class and
+ * replaced by a placeholder that says so in words, which keeps the marks, the
+ * mistake bank and every other question on the page intact.
+ *
+ * This is the one place that degrades rather than refuses. A session a student
+ * is about to *answer* must never be assembled from a question we cannot show,
+ * which is why Practice and Mock classify and stop instead.
+ */
+const UNREADABLE_QUESTION_NOTE =
+  "This question could not be displayed. Your answer and your score for it are unaffected.";
+
+function reviewQuestion(value: Json, kind: SessionKind, sessionId: string, position: number): StudentQuestion {
+  const snapshot = readStudentSnapshot(value, `${sessionId}:${position}`);
+  if (snapshot.question) return snapshot.question;
+
+  logSessionOpenFailure({
+    failure: snapshot.failure ?? "QUESTION_DESERIALIZATION_FAILED",
+    kind, sessionId, position, detail: snapshot.detail,
+  });
+
+  /*
+   * Keep every field that was readable. Subject and topic above all: the
+   * mistake bank and the revision builder both select on `subject.slug`, so a
+   * placeholder that blanked it would silently drop this question out of a
+   * student's revision rather than merely failing to draw it.
+   */
+  if (snapshot.partial) {
+    return snapshot.partial.prompt.trim()
+      ? snapshot.partial
+      : { ...snapshot.partial, prompt: UNREADABLE_QUESTION_NOTE };
+  }
+
+  return {
+    id: `${sessionId}:${position}`,
+    source: { provider: "unknown", providerQuestionId: "", internalQuestionId: null },
+    examBody: "jamb",
+    subject: { id: "", slug: "", name: "" },
+    topic: null, year: null, instruction: null,
+    prompt: UNREADABLE_QUESTION_NOTE,
+    passage: null, discardedContext: null, assets: [], options: [], difficulty: null,
+  };
+}
 
 export async function loadResult(userId: string, kind: ResultKind, id: string): Promise<LearningResult | null> {
   if (!UUID.test(id)) return null;
@@ -39,7 +91,7 @@ export async function loadResult(userId: string, kind: ResultKind, id: string): 
     items = q.data.map(x => {
       const answer = answers.get(x.id);
       const selected = answer?.selected_option_key ?? null;
-      return { id: x.id, position: x.overall_position, question: x.student_snapshot as unknown as StudentQuestion,
+      return { id: x.id, position: x.overall_position, question: reviewQuestion(x.student_snapshot, "exam", id, x.overall_position),
         selected, correct: x.correct_option_key, explanation: x.explanation,
         outcome: outcome(selected, x.correct_option_key), flagged: answer?.is_flagged ?? false };
     });
@@ -53,7 +105,7 @@ export async function loadResult(userId: string, kind: ResultKind, id: string): 
     const answers = new Map(a.data.map(x => [x.session_question_id, x]));
     items = q.data.map(x => {
       const selected = answers.get(x.id)?.selected_option_key ?? null;
-      return { id: x.id, position: x.position, question: x.student_snapshot as unknown as StudentQuestion,
+      return { id: x.id, position: x.position, question: reviewQuestion(x.student_snapshot, "practice", id, x.position),
         selected, correct: x.correct_option_key, explanation: x.explanation,
         outcome: outcome(selected, x.correct_option_key), flagged: false };
     });

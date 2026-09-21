@@ -407,3 +407,64 @@ test('every non-submit control on the runners is an explicit button', () => {
     assert.ok(!code.includes('type="submit"'), `${name}: nothing here submits a form`);
   }
 });
+
+// --------------------------------------------- legacy frozen snapshots render
+
+/**
+ * A snapshot frozen before `assets`, `instruction` and `passage.kind` existed.
+ *
+ * Both runners read `question.assets` and `question.options` to lay a question
+ * out, and a bare `assets.length` on a snapshot that has no `assets` throws
+ * inside the render — which the route's error boundary catches and shows as
+ * "We could not open this session". A student mid-paper must never lose their
+ * session to a field that did not exist when they started it.
+ */
+const legacyQuestion = () => ({
+  id: 'q-legacy', examBody: 'jamb',
+  subject: { id: 'use-of-english', slug: 'use-of-english', name: 'Use of English' },
+  source: { provider: 'aloc', providerQuestionId: '41' },
+  prompt: 'According to the passage, the narrator felt',
+  // No `assets`, no `instruction`, no `discardedContext`, and a passage with no `kind`.
+  passage: { id: 'p-legacy', body: 'The evening had worn on and the lamps were lit.' },
+  options: [
+    { id: 'legacy-a', key: 'A', text: 'relieved' },
+    { id: 'legacy-b', key: 'B', text: 'anxious' },
+  ],
+});
+
+test('a practice session frozen before the current question model still renders', () => {
+  globalThis.__sync = sync({ answers: { 'pq-legacy': blank() } });
+  const markup = html(h(PracticeSessionRunner, {
+    initialSession: {
+      ...practiceSession,
+      requestedCount: 1, questionCount: 1,
+      questions: [{ revision: 0, id: 'pq-legacy', position: 1, question: legacyQuestion() }],
+    },
+  }));
+
+  assert.ok(markup.includes('According to the passage, the narrator felt'), 'the stem must render');
+  assert.ok(markup.includes('The evening had worn on'), 'the old passage must still be shown');
+  assert.ok(markup.includes('Passage'), 'a passage with no kind is prose, as it always was');
+  assert.ok(markup.includes('relieved') && markup.includes('anxious'), 'every option must render');
+});
+
+test('a mock attempt frozen before the current question model still renders', () => {
+  globalThis.__sync = sync({ answers: { 'eq-legacy': blank() } });
+  const markup = html(h(ExamAttemptRunner, {
+    initialAttempt: {
+      ...examAttempt,
+      totalQuestions: 1,
+      subjects: [{
+        id: 'as-1', subjectId: 'use-of-english', slug: 'use-of-english', name: 'Use of English',
+        displayOrder: 1, questionCount: 1, answeredCount: 0, flaggedCount: 0,
+        questions: [{
+          revision: 0, id: 'eq-legacy', subjectId: 'use-of-english',
+          subjectPosition: 1, overallPosition: 1, question: legacyQuestion(), isFlagged: false,
+        }],
+      }],
+    },
+  }));
+
+  assert.ok(markup.includes('According to the passage, the narrator felt'));
+  assert.ok(markup.includes('relieved'), 'the options must render without an assets array');
+});

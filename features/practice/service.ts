@@ -14,7 +14,14 @@ import type { PracticeQuestionAllowance } from "@/features/billing/usage-types";
 import { lockBeyondAllowance } from "@/features/practice/allowance";
 import { toStudentQuestion } from "@/features/questions/delivery";
 import { fetchCanonicalQuestions, resolveQuestionProviderId } from "@/features/questions/service";
-import type { StudentQuestion } from "@/features/questions/types";
+import { readStudentSnapshot } from "@/features/questions/snapshot";
+import {
+  classifyDatabaseError,
+  logSessionOpenFailure,
+  SessionOpenError,
+  toSessionOpenError,
+  type SessionOpenDiagnostic,
+} from "@/features/sessions/diagnostics";
 import type {
   CompletePracticeSessionResult,
   CreatePracticeSessionInput,
@@ -46,8 +53,16 @@ function asOptionKey(value: string): QuestionOption["key"] {
   return value as QuestionOption["key"];
 }
 
-function asStudentQuestion(value: Json): StudentQuestion {
-  return value as unknown as StudentQuestion;
+/**
+ * Refuses to open a session, having first recorded why.
+ *
+ * Every exit from `loadPracticeSessionForUser` that is not a session goes
+ * through here, so there is exactly one place a reason can be lost — and it
+ * does not lose one.
+ */
+function refuse(diagnostic: SessionOpenDiagnostic): SessionOpenError {
+  logSessionOpenFailure(diagnostic);
+  return new SessionOpenError(diagnostic);
 }
 
 function toJson(value: unknown): Json {
@@ -185,17 +200,43 @@ export async function loadPracticeSessionForUser(
   meter: PracticeMeter | null = null,
 ): Promise<PracticeSessionView | null> {
   const admin = createAdminClient();
+  /*
+   * Selected by id alone, then checked against the caller.
+   *
+   * Filtering by `user_id` in the query would be equally safe and is what this
+   * did, but it collapses "no such session" and "not yours" into one empty
+   * result, so the log could never tell a dead link from an attempt on someone
+   * else's paper. Both still end the same way for the student — refused, with
+   * nothing about the session disclosed — and the ownership check below is the
+   * thing that enforces it.
+   */
   const { data: session, error: sessionError } = await admin
     .from("practice_sessions")
     .select("*")
     .eq("id", sessionId)
-    .eq("user_id", userId)
     .maybeSingle();
 
-  if (sessionError) throw new Error(`Could not load practice session: ${sessionError.message}`);
-  if (!session) return null;
+  if (sessionError) {
+    const { failure, detail } = classifyDatabaseError(sessionError);
+    // A malformed id is a dead link, not an outage: refused as not-found.
+    if (failure === "SESSION_NOT_FOUND") {
+      logSessionOpenFailure({ failure, kind: "practice", sessionId, detail });
+      return null;
+    }
+    throw refuse({ failure, kind: "practice", sessionId, detail });
+  }
+  if (!session) {
+    logSessionOpenFailure({ failure: "SESSION_NOT_FOUND", kind: "practice", sessionId });
+    return null;
+  }
 
   const typedSession = session as SessionRow;
+  if (typedSession.user_id !== userId) {
+    // Refused exactly as a missing session is, so the caller cannot learn from
+    // the response that this id names a real session belonging to someone else.
+    logSessionOpenFailure({ failure: "SESSION_FORBIDDEN", kind: "practice", sessionId });
+    return null;
+  }
   const [
     { data: subject, error: subjectError },
     { data: topic, error: topicError },
@@ -210,10 +251,34 @@ export async function loadPracticeSessionForUser(
     admin.from("practice_answers").select("*").eq("session_id", sessionId).eq("user_id", userId),
   ]);
 
-  if (subjectError || !subject) throw new Error("Could not load the practice subject.");
-  if (topicError) throw new Error("Could not load the practice topic.");
-  if (questionsError) throw new Error("Could not load practice questions.");
-  if (answersError) throw new Error("Could not load saved answers.");
+  if (subjectError || !subject) {
+    throw refuse({
+      failure: subjectError ? classifyDatabaseError(subjectError).failure : "DATABASE_ERROR",
+      kind: "practice", sessionId,
+      detail: subjectError ? classifyDatabaseError(subjectError).detail : "session subject row is missing",
+    });
+  }
+  if (topicError) throw refuse({ ...classifyDatabaseError(topicError), kind: "practice", sessionId });
+  if (questionsError) throw refuse({ ...classifyDatabaseError(questionsError), kind: "practice", sessionId });
+  if (answersError) throw refuse({ ...classifyDatabaseError(answersError), kind: "practice", sessionId });
+
+  /*
+   * A session row with no questions behind it.
+   *
+   * `create_practice_session` inserts the row and its questions in one
+   * function, so a half-built session cannot be produced by the normal path —
+   * but a session that looks resumable and cannot be opened is the worst
+   * possible state to guess about, and Practice lists sessions from the row
+   * alone. Refused with a name rather than handed to a runner that would index
+   * into an empty array.
+   */
+  const storedQuestions = (questionRows ?? []) as SessionQuestionRow[];
+  if (storedQuestions.length === 0) {
+    throw refuse({
+      failure: "SESSION_INCOMPLETE", kind: "practice", sessionId,
+      detail: `session claims ${typedSession.question_count} questions and has none stored`,
+    });
+  }
 
   const revisions = await getRevisions(userId, "practice", sessionId);
   const answersByQuestion = new Map<string, AnswerRow>(
@@ -221,7 +286,25 @@ export async function loadPracticeSessionForUser(
   );
   const revealFeedback = typedSession.mode === "practice" || typedSession.status === "completed";
 
-  const allQuestions = ((questionRows ?? []) as SessionQuestionRow[]).map((row) => {
+  /*
+   * Every frozen snapshot comes back through `readStudentSnapshot`, which
+   * supplies defaults for fields that did not exist when it was written and
+   * never rewrites the stored row. A session frozen before `assets`,
+   * `instruction` or `passage.kind` existed therefore opens and renders as it
+   * always did, instead of throwing inside the runner on `assets.length` and
+   * reaching the student as "We could not open this session".
+   */
+  let sawLegacySnapshot = false;
+  const allQuestions = storedQuestions.map((row) => {
+    const snapshot = readStudentSnapshot(row.student_snapshot, row.id);
+    if (!snapshot.question) {
+      throw refuse({
+        failure: snapshot.failure ?? "QUESTION_DESERIALIZATION_FAILED",
+        kind: "practice", sessionId, position: row.position, detail: snapshot.detail,
+      });
+    }
+    sawLegacySnapshot ||= snapshot.legacy;
+
     const answer = answersByQuestion.get(row.id);
     let feedback: PracticeFeedback | null = null;
     if (answer && revealFeedback) {
@@ -236,11 +319,19 @@ export async function loadPracticeSessionForUser(
       id: row.id,
       revision: revisions.get(row.id) ?? 0,
       position: row.position,
-      question: asStudentQuestion(row.student_snapshot),
+      question: snapshot.question,
       selectedOptionKey: answer ? asOptionKey(answer.selected_option_key) : null,
       feedback,
     };
   });
+  /*
+   * How many sessions still hold pre-`assets` snapshots is a question only the
+   * live data can answer, so it is counted where it is known. One line per
+   * session opened, not one per question, and it says nothing about the student.
+   */
+  if (sawLegacySnapshot) {
+    console.info(`[session-open] legacySnapshot kind=practice session=${sessionId} questions=${storedQuestions.length}`);
+  }
 
   /*
    * Delivery gate for question-counted plans. Only an answerable session is
@@ -254,10 +345,18 @@ export async function loadPracticeSessionForUser(
   const answerable = typedSession.status === "in_progress"
     && (!typedSession.expires_at || Date.parse(typedSession.expires_at) > Date.now());
   if (meter) {
-    practiceAllowance = await readPracticeAllowance(userId, meter);
-    if (answerable) {
-      const held = new Set(await readHeldPracticeQuestions(userId, sessionId));
-      questions = lockBeyondAllowance(allQuestions, held, practiceAllowance?.available ?? 0);
+    // The allowance decision is unchanged and still belongs to billing. Only the
+    // classification is added: a ledger read that fails is a distinct reason a
+    // session would not open, and it used to be indistinguishable from a broken
+    // snapshot in the logs.
+    try {
+      practiceAllowance = await readPracticeAllowance(userId, meter);
+      if (answerable) {
+        const held = new Set(await readHeldPracticeQuestions(userId, sessionId));
+        questions = lockBeyondAllowance(allQuestions, held, practiceAllowance?.available ?? 0);
+      }
+    } catch (error) {
+      throw toSessionOpenError(error, "practice", sessionId, "QUOTA_BLOCKED");
     }
   }
 

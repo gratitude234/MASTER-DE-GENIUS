@@ -3,6 +3,8 @@ import "server-only";
 import { getRevisions } from "@/features/offline/server";
 
 import { toStudentQuestion } from "@/features/questions/delivery";
+import { readStudentSnapshot } from "@/features/questions/snapshot";
+import { logSessionOpenFailure, SessionOpenError } from "@/features/sessions/diagnostics";
 import { configuredQuestionProvider } from "@/features/questions/routing";
 import { fetchCanonicalQuestions, isSubjectAvailable } from "@/features/questions/service";
 import type { StudentQuestion } from "@/features/questions/types";
@@ -38,8 +40,25 @@ function asOptionKey(value: string | null): QuestionOption["key"] | null {
   return value as QuestionOption["key"];
 }
 
-function asStudentQuestion(value: Json): StudentQuestion {
-  return value as unknown as StudentQuestion;
+/**
+ * One frozen snapshot, read back through the shared compatibility layer.
+ *
+ * The same reader Practice uses, for the same reason: a mock paper frozen
+ * before `assets` or `passage.kind` existed must still open, and a snapshot
+ * that genuinely cannot be shown must be named rather than thrown as an
+ * anonymous `TypeError` from inside the runner.
+ */
+function asStudentQuestion(value: Json, attemptId: string, position: number): StudentQuestion {
+  const snapshot = readStudentSnapshot(value, `${attemptId}:${position}`);
+  if (!snapshot.question) {
+    const diagnostic = {
+      failure: snapshot.failure ?? ("QUESTION_DESERIALIZATION_FAILED" as const),
+      kind: "exam" as const, sessionId: attemptId, position, detail: snapshot.detail,
+    };
+    logSessionOpenFailure(diagnostic);
+    throw new SessionOpenError(diagnostic);
+  }
+  return snapshot.question;
 }
 
 function toJson(value: unknown): Json {
@@ -337,7 +356,7 @@ export async function loadExamAttemptForUser(userId: string, attemptId: string):
               subjectId: questionRow.subject_id,
               subjectPosition: questionRow.subject_position,
               overallPosition: questionRow.overall_position,
-              question: asStudentQuestion(questionRow.student_snapshot),
+              question: asStudentQuestion(questionRow.student_snapshot, attemptId, questionRow.overall_position),
               selectedOptionKey: asOptionKey(answer?.selected_option_key ?? null),
               isFlagged: answer?.is_flagged ?? false,
             };

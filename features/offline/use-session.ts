@@ -106,7 +106,7 @@ export function useOfflineSession(kind: SessionKind, view: ExamAttemptView | Pra
       }, refresh);
       queue.current = q;
       const questions = "subjects" in view ? view.subjects.flatMap(s => s.questions) : view.questions;
-      navigator.serviceWorker?.ready.then(reg => { if (!disposed) reg.active?.postMessage({ type: "SAVE_MEDIA", urls: questions.flatMap(q => q.question.assets.map(a => a.url)) }); }).catch(() => {});
+      navigator.serviceWorker?.ready.then(reg => { if (!disposed) reg.active?.postMessage({ type: "SAVE_MEDIA", urls: questions.flatMap(q => (q.question.assets ?? []).map(a => a.url)) }); }).catch(() => {});
       refresh(); setReady(true); setState(Object.keys(record.pending).length ? "saved_local" : "saved");
       if (navigator.onLine) void flush();
       heartbeat = setInterval(() => {

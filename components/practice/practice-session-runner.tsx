@@ -305,7 +305,7 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
         {question.prompt ? <p className="mt-2 text-[17px] font-semibold leading-[1.55] text-slate-950">{question.prompt}</p> : null}
 
         <div className="mt-4 space-y-2.5">
-          {question.options.map((option) => {
+          {(question.options ?? []).map((option) => {
             const selected = currentState.selectedOptionKey === option.key;
             const correct = Boolean(feedback && feedback.correctOptionKey === option.key);
             const wrongSelected = Boolean(feedback && selected && !feedback.isCorrect);
@@ -371,7 +371,7 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
               sessionId={initialSession.id}
               questionId={current.id}
               isCorrect={feedback.isCorrect}
-              hasVisual={question.assets.length > 0}
+              hasVisual={(question.assets?.length ?? 0) > 0}
             />
           </div>
         ) : currentState.selectedOptionKey && !feedback && initialSession.mode === "practice" ? (

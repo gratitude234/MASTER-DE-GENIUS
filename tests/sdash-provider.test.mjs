@@ -323,14 +323,17 @@ test('J: the shared integrity validator owns the verdict — no provider shortcu
   }
 });
 
-test('L: a replacement round asks only for the shortfall and excludes everything seen', async () => {
+test('L: a replacement round asks for the shortfall plus headroom and excludes everything seen', async () => {
+  // Asking for exactly the shortfall is what left a 60-question paper at 59:
+  // the replacements are refused at the same rate as the first fetch, so the
+  // round must cover that rate rather than only the gap.
   const first = [...range(1, 17), orphan(18), orphan(19), orphan(20)];
-  const { calls, provider } = upstream([first, range(21, 23)]);
+  const { calls, provider } = upstream([first, range(21, 30)]);
 
   await assembleDeliverableQuestions(provider, query());
 
   assert.equal(calls[0].url.searchParams.get('limit'), '20', 'the first round asks for the full set');
-  assert.equal(calls[1].url.searchParams.get('limit'), '3', 'the top-up asks only for the three that were refused');
+  assert.equal(calls[1].url.searchParams.get('limit'), '6', 'the top-up covers the three refused plus the rate they were refused at');
   for (const call of calls) {
     assert.equal(call.url.searchParams.get('subject'), 'biology', 'the subject is never relaxed');
     assert.equal(call.url.searchParams.get('type'), 'wassce', 'the exam is never relaxed');

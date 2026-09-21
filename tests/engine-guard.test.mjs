@@ -56,6 +56,11 @@ test('the guard covers every engine surface it claims to', () => {
     // Which provider serves an exam and subject decides what a frozen session
     // contains, so the routing table and every adapter behind it are engine.
     'features/questions/routing.ts',
+    // Reading a frozen snapshot back is as much engine as writing one: this is
+    // the single door every stored question comes through, and the rule that a
+    // session frozen by an older build stays readable lives in it.
+    'features/questions/snapshot.ts',
+    'features/sessions/diagnostics.ts',
     'features/questions/providers/sdash/index.ts',
     'features/questions/providers/sdash/mapping.ts',
     'features/questions/providers/sdash/normalize.ts',

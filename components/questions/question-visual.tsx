@@ -153,17 +153,24 @@ export function QuestionVisual({ asset, compact = false, className }: QuestionVi
  *
  * Renders nothing when there are none, so a call site is a single unconditional
  * line and cannot forget the empty case.
+ *
+ * `assets` is accepted as possibly absent because a frozen snapshot written
+ * before the field existed has no `assets` at all. `readStudentSnapshot` now
+ * supplies `[]` for those on the way out of the database, so this should never
+ * see one — but this component is the last line before the screen, and a bare
+ * `assets.length` here is what turned a missing optional field into "We could
+ * not open this session". A question with no visual is not an error.
  */
 export function QuestionVisuals({
   assets,
   compact = false,
   className,
 }: {
-  assets: readonly QuestionAsset[];
+  assets: readonly QuestionAsset[] | null | undefined;
   compact?: boolean;
   className?: string;
 }) {
-  if (assets.length === 0) return null;
+  if (!assets || assets.length === 0) return null;
   return (
     <div className={cn("grid gap-3", className)}>
       {assets.map((asset) => (

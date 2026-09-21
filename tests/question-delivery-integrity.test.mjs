@@ -98,14 +98,26 @@ test('a question that fails integrity is replaced, not subtracted', async () => 
   }
 });
 
-test('a replacement round asks only for the shortfall and excludes everything already seen', async () => {
+test('a replacement round asks for the shortfall plus headroom, and excludes everything already seen', async () => {
+  /*
+   * The top-up deliberately asks for *more* than the shortfall.
+   *
+   * It used to ask for exactly the three that were refused, which reads as
+   * frugal and is why a 60-question JAMB English paper arrived with 59: the
+   * replacements are drawn from the same inventory and refused at the same
+   * rate, so a round that asks for exactly the gap can only narrow it. Here 17
+   * of 20 were valid, so closing a gap of three needs about four candidates,
+   * and a margin of two covers the round landing unlucky.
+   */
   const first = [...range(1, 17), orphan(18), orphan(19), orphan(20)];
-  const { calls, provider } = upstream([first, range(21, 23)]);
+  const { calls, provider } = upstream([first, range(21, 30)]);
 
-  await assembleDeliverableQuestions(provider, query());
+  const result = await assembleDeliverableQuestions(provider, query());
 
   assert.equal(calls[0].path, '/api/v2/q/20', 'the first round asks for the full set');
-  assert.equal(calls[1].path, '/api/v2/q/3', 'the top-up asks only for the three that were refused');
+  assert.equal(calls[1].path, '/api/v2/q/6', 'the top-up covers the three refused plus the rate they were refused at');
+  assert.equal(result.questions.length, 20, 'and the session is whole');
+  assert.equal(new Set(result.questions.map((q) => q.source.providerQuestionId)).size, 20);
 });
 
 test('rejected questions are never re-fetched, so a bad record cannot loop', async () => {

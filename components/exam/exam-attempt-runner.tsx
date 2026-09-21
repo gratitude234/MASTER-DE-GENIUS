@@ -435,7 +435,7 @@ export function ExamAttemptRunner({ initialAttempt, recovered = false }: ExamAtt
 
             <p className="text-[17px] font-semibold leading-[1.6] text-slate-950">{question.prompt}</p>
             <div className="mt-[22px] space-y-2.5">
-              {question.options.map((option) => {
+              {(question.options ?? []).map((option) => {
                 const selected = currentResponse.selectedOptionKey === option.key;
                 return (
                   // Answer choices keep their own markup and state: a single-select

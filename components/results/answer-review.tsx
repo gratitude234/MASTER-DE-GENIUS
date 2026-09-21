@@ -125,7 +125,7 @@ export function AnswerReview({
               <p className="whitespace-pre-wrap text-sm font-semibold leading-[1.5] text-slate-950">{item.question.prompt}</p>
 
               <ul className="space-y-1.5">
-                {item.question.options.map(option => (
+                {(item.question.options ?? []).map(option => (
                   <li
                     key={option.key}
                     className={cn(
@@ -154,7 +154,7 @@ export function AnswerReview({
                     sessionId={resultId}
                     questionId={item.id}
                     isCorrect={item.outcome === "correct"}
-                    hasVisual={item.question.assets.length > 0}
+                    hasVisual={(item.question.assets?.length ?? 0) > 0}
                   />
                 ) : null}
               </div>

@@ -58,14 +58,68 @@ function assertSupportedFilters(provider: QuestionProvider, query: QuestionQuery
  * Replacement rounds allowed after the first fetch, when integrity validation
  * has removed candidates and the session is short.
  *
- * Three provider invocations in total. The bound matters because each one is
+ * Four provider invocations in total. The bound matters because each one is
  * itself already bounded — legacy ALOC sends at most 8 upstream requests and
  * Station at most 12 — so the worst case is finite and small, and a provider
  * whose inventory is genuinely bad is never hammered. A round that produces no
  * new candidate at all ends the loop immediately, so an exhausted pool costs one
- * extra call rather than three.
+ * extra call rather than four.
+ *
+ * It was three, which is what produced "Use of English does not yet have enough
+ * questions for a full mock (59/60 available)" against a provider holding
+ * thousands of clean English questions. A round used to ask for exactly the
+ * shortfall, so the rejection rate that thinned the first fetch thinned every
+ * top-up too: 60 asked and 45 valid, then 15 asked and 11 valid, then 4 asked
+ * and 3 valid — the gap shrank geometrically and the budget ran out one
+ * question short. Asking with headroom (`topUpRequestCount`) is what actually
+ * closes it; the fourth round is spent only when a round still falls short, and
+ * in measurement the average assembly now costs fewer provider requests than
+ * before rather than more.
  */
-export const MAX_INTEGRITY_TOPUP_ROUNDS = 2;
+export const MAX_INTEGRITY_TOPUP_ROUNDS = 3;
+
+/**
+ * The lowest acceptance rate a top-up will plan around.
+ *
+ * Without a floor, a first round that refused almost everything would compute
+ * an unbounded replacement batch. With it, the most one round can ask for is
+ * five times the shortfall, itself still capped by `MAX_BATCH_SIZE`.
+ */
+const MIN_PLANNED_ACCEPTANCE = 0.2;
+
+/**
+ * Candidates requested above the scaled shortfall.
+ *
+ * The scaled figure is an expectation, and an expectation lands short about
+ * half the time. Two spare candidates cost one upstream record each and are
+ * what turns "usually enough" into "enough".
+ */
+const TOPUP_MARGIN = 2;
+
+/**
+ * How many candidates a top-up round should ask for to close a shortfall.
+ *
+ * Asking for exactly the shortfall guarantees falling short again whenever the
+ * inventory rejects anything at all, because the replacements are drawn from
+ * the same inventory and refused at the same rate. So the request is scaled by
+ * the acceptance rate this assembly has actually measured — never an assumed
+ * one — and a small margin is added.
+ *
+ * Bounded at both ends: never below the shortfall, never above
+ * `MAX_BATCH_SIZE`. It changes only how many candidates are *examined*; which
+ * ones survive is still decided entirely by `checkQuestionIntegrity`, and the
+ * caller still receives at most the count it asked for.
+ *
+ * Exported for tests, which assert the arithmetic directly.
+ */
+export function topUpRequestCount(shortfall: number, considered: number, rejected: number): number {
+  if (shortfall <= 0) return 0;
+  // Nothing measured yet: ask for what is needed and learn from the answer.
+  if (considered <= 0) return Math.min(shortfall, MAX_BATCH_SIZE);
+  const acceptance = Math.max((considered - rejected) / considered, MIN_PLANNED_ACCEPTANCE);
+  const scaled = Math.ceil(shortfall / acceptance) + TOPUP_MARGIN;
+  return Math.min(Math.max(scaled, shortfall), MAX_BATCH_SIZE);
+}
 
 /** One refused candidate. Contains no answer key and no student identity. */
 export interface QuestionIntegrityRejection {
@@ -82,6 +136,8 @@ export interface AssembledQuestions {
   rejections: QuestionIntegrityRejection[];
   /** Provider invocations spent. Asserted by tests to prove the bound holds. */
   rounds: number;
+  /** Distinct candidates examined, rejected ones included. */
+  considered: number;
 }
 
 /**
@@ -89,9 +145,16 @@ export interface AssembledQuestions {
  *
  * A student who asked for 20 questions must receive 20 valid ones, not 17
  * because three provider records had lost their examination context. Each round
- * asks only for the shortfall and carries forward every source id already seen,
- * so a replacement is never a duplicate and a known-bad question is never
- * re-fetched. Admin blocks are applied to every round, not just the first.
+ * carries forward every source id already seen, so a replacement is never a
+ * duplicate and a known-bad question is never re-fetched. Admin blocks are
+ * applied to every round, not just the first.
+ *
+ * A top-up round asks for more than the shortfall, by the measured acceptance
+ * rate — see `topUpRequestCount`. Requesting exactly the shortfall is what left
+ * a 60-question JAMB English paper one question short: the replacements come
+ * from the same inventory and are refused at the same rate, so each round only
+ * shrank the gap instead of closing it. The extra candidates are examined, not
+ * delivered — the caller still receives at most `query.count`.
  *
  * The requested filters (exam, subject, year, topic, difficulty) are passed
  * through untouched: a shortage is reported honestly rather than papered over
@@ -111,16 +174,19 @@ export async function assembleDeliverableQuestions(
   const questions: CanonicalQuestion[] = [];
   const rejections: QuestionIntegrityRejection[] = [];
   let rounds = 0;
+  /** Distinct candidates examined. With `rejections`, the measured acceptance rate. */
+  let considered = 0;
 
   while (questions.length < query.count && rounds <= MAX_INTEGRITY_TOPUP_ROUNDS) {
     const batch = await provider.fetchQuestions({
       ...query,
-      count: query.count - questions.length,
+      count: topUpRequestCount(query.count - questions.length, considered, rejections.length),
       excludeSourceIds: [...seen],
     });
     rounds += 1;
 
     let fresh = 0;
+    const deliveredBefore = questions.length;
     // The final word on blocks: a provider that ignored its exclusion list still
     // cannot put a blocked question into a session.
     for (const candidate of withoutBlockedQuestions(batch, blocked)) {
@@ -129,6 +195,7 @@ export async function assembleDeliverableQuestions(
       if (seen.has(sourceId)) continue;
       seen.add(sourceId);
       fresh += 1;
+      considered += 1;
 
       const verdict = checkQuestionIntegrity(candidate);
       if (!verdict.valid) {
@@ -148,9 +215,33 @@ export async function assembleDeliverableQuestions(
     // Nothing new arrived: the usable pool is exhausted and further rounds would
     // only spend provider credits to receive the same records again.
     if (fresh === 0) break;
+
+    /*
+     * A top-up round that added nothing usable ends the assembly.
+     *
+     * `fresh === 0` above catches an exhausted pool. This catches the other
+     * shape of waste: a pool that keeps yielding *new* source ids which are all
+     * refused. Without this, an inventory that is uniformly bad spends the whole
+     * request budget — four provider calls, up to 48 upstream Station requests
+     * for one subject — to deliver nothing at all, because fresh-but-invalid ids
+     * look like progress to the exhaustion check and are not.
+     *
+     * Deliberately narrow:
+     *
+     *   - the initial round is exempt (`rounds > 1`), so a first batch that
+     *     happens to be entirely bad still gets its replacements;
+     *   - it asks whether the round *added a valid question*, not whether it
+     *     rejected any. A round that delivers even one is productive and the
+     *     loop continues, because that is a subject whose inventory is merely
+     *     mixed rather than broken;
+     *   - it changes only when to stop asking. Nothing about dedup, admin
+     *     blocks, integrity or the honest shortage this returns is affected,
+     *     and a caller that requires an exact count still refuses a short paper.
+     */
+    if (rounds > 1 && questions.length === deliveredBefore) break;
   }
 
-  return { questions, rejections, rounds };
+  return { questions, rejections, rounds, considered };
 }
 
 /**
@@ -171,9 +262,14 @@ function reportIntegrityRejections(providerId: string, query: QuestionQuery, res
   const reasons = [...counts.entries()].map(([reason, count]) => `${reason}=${count}`).join(",");
   const ids = result.rejections.slice(0, 20).map((rejection) => rejection.providerQuestionId).join(" ");
 
+  // `considered` and `short` are what tell a shortage apart from a defect:
+  // 60 requested, 74 examined and 60 delivered is healthy inventory being
+  // filtered; 60 requested, 63 examined and 59 delivered is the assembler
+  // giving up early, which is the shape that produced "59/60 available".
   console.warn(
     `[questions] integrity provider=${providerId} exam=${query.examBody} subject=${query.subjectSlug} ` +
-      `requested=${query.count} delivered=${result.questions.length} rejected=${result.rejections.length} ` +
+      `requested=${query.count} considered=${result.considered} delivered=${result.questions.length} ` +
+      `short=${Math.max(query.count - result.questions.length, 0)} rejected=${result.rejections.length} ` +
       `rounds=${result.rounds} reasons=${reasons} ids=${ids}`,
   );
 }
