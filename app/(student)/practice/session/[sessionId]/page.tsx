@@ -3,7 +3,6 @@ import { notFound, redirect } from "next/navigation";
 import { PracticeSessionRunner } from "@/components/practice/practice-session-runner";
 import { AiAllowanceProvider } from "@/components/billing/ai-allowance";
 import { getEntitlement } from "@/features/billing/entitlements";
-import { practiceMeterFor } from "@/features/billing/quota";
 import { getUsageSummary } from "@/features/billing/usage";
 import { loadPracticeSessionForUser } from "@/features/practice/service";
 import type { PracticeSessionView } from "@/features/practice/types";
@@ -40,7 +39,7 @@ export default async function PracticeSessionPage({ params }: PracticeSessionPag
     const entitlement = await getEntitlement(user.id).catch((error: unknown) => {
       throw toSessionOpenError(error, "practice", sessionId, "ENTITLEMENT_BLOCKED");
     });
-    const session = await loadPracticeSessionForUser(user.id, sessionId, practiceMeterFor(entitlement));
+    const session = await loadPracticeSessionForUser(user.id, sessionId);
     if (session) {
       const aiEnabled = aiExplanationsEnabled();
       loaded = {

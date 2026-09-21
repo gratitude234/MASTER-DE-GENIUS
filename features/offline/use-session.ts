@@ -4,7 +4,6 @@ import { DurableQueue, SyncFailure, type Ack } from "./queue";
 import { SessionClock, resumedTime } from "./clock";
 import { claimOwner, readOwner, readRecord, writeRecord } from "./storage";
 import { recordKey, type OfflineRecord, type Selection, type SessionKind, type SavedSelection } from "./types";
-import type { PracticeQuestionAllowance } from "@/features/billing/usage-types";
 import type { ExamAttemptView } from "@/features/exams/types";
 import type { PracticeSessionView } from "@/features/practice/types";
 
@@ -36,11 +35,12 @@ export function useOfflineSession(kind: SessionKind, view: ExamAttemptView | Pra
   const finalising = useRef(false);
   const [finishing, setFinishing] = useState(false);
   const [receipt, setReceipt] = useState<Record<string, unknown> | null>(null);
-  // The free practice allowance, as the server last reported it. Display only:
-  // the server decides every answer, and this never gates one locally.
-  const [allowance, setAllowance] = useState<PracticeQuestionAllowance | null>(
-    "questions" in view ? view.practiceAllowance ?? null : null,
-  );
+  /*
+   * True once the server has refused to save an answer for a reason retrying
+   * cannot fix. Practice answers are not metered — the plan counts sessions at
+   * creation, not answers — so this stays false in normal operation; it exists
+   * so a refusal can never leave the queue retrying for ever.
+   */
   const [limited, setLimited] = useState(false);
   const refresh = useCallback(() => {
     const q = queue.current;
@@ -101,7 +101,6 @@ export function useOfflineSession(kind: SessionKind, view: ExamAttemptView | Pra
           ...(kind === "exam" ? { attemptQuestionId: questionId } : { sessionQuestionId: questionId }), ...pending,
         }) });
         if (typeof payload.serverNow === "number") clock.current?.sync(payload.serverNow);
-        if (payload.allowance && typeof payload.allowance === "object") setAllowance(payload.allowance as PracticeQuestionAllowance);
         return payload as unknown as Ack;
       }, refresh);
       queue.current = q;
@@ -195,5 +194,5 @@ export function useOfflineSession(kind: SessionKind, view: ExamAttemptView | Pra
     try { await q.retryStorage(); setReady(true); setState("saved_local"); refresh(); if (navigator.onLine) void flush(); }
     catch { refresh(); }
   }, [refresh, flush]);
-  return { retryStorage, answers, ready, state, online, error, code, secondsLeft, select, cursor, setCursor, flush, finish, finishing, receipt, pendingCount, resolveConflict, allowance, limited };
+  return { retryStorage, answers, ready, state, online, error, code, secondsLeft, select, cursor, setCursor, flush, finish, finishing, receipt, pendingCount, resolveConflict, limited };
 }

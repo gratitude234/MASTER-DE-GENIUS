@@ -92,11 +92,11 @@ test('the billing authority and the Paystack surface are guarded too', () => {
     'app/api/billing/verify/route.ts',
     'lib/rate-limit.ts',
     'supabase/migrations/20260908060000_m9_billing_and_entitlements.sql',
-    // Free plan v2: the question ledger, the usage summary every screen reads,
-    // and the rule that decides which practice questions a Free browser receives.
+    // The Free plan: the usage summary every screen reads, and the account-wide
+    // read that decides whether today's session is "in progress" or "used".
     'supabase/migrations/20260921100000_free_plan_conversion_quotas.sql',
     'features/billing/usage.ts',
-    'features/practice/allowance.ts',
+    'features/practice/active-session.ts',
   ]) {
     assert.ok(covered.includes(required), `${required} must be guarded`);
   }

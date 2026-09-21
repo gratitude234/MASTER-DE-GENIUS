@@ -12,14 +12,9 @@ import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { Select } from "@/components/ui/select";
 import { navClearance, typography } from "@/components/ui/variants";
-import {
-  countNoun,
-  PRACTICE_ONE_REMAINING,
-  practiceExhausted,
-  practiceRemainingLine,
-  resetLine,
-} from "@/features/billing/copy";
+import { PRACTICE_SESSION_IN_PROGRESS, practiceAvailableLine, practiceExhausted, resetLine } from "@/features/billing/copy";
 import { asPlanLimitNotice, type PlanLimitNotice } from "@/features/billing/limit-notice";
+import type { BillingTier } from "@/features/billing/plans";
 import type { PracticeUsage } from "@/features/billing/usage-types";
 import type { PracticeRecommendation } from "@/features/home/recommendation";
 import { TIMED_SECONDS_PER_QUESTION } from "@/features/practice/types";
@@ -71,11 +66,17 @@ interface PracticeSetupProps {
     questionCount: number;
   } | null;
   /**
-   * The server's count of free practice questions, on a plan that counts them.
-   * Null on Master. Displayed and used to size the offer only — the session
-   * route re-checks and clamps whatever is sent.
+   * The server's practice allowance: how many new sessions are left today, how
+   * large a session this plan may build, and the session already running if
+   * there is one.
+   *
+   * Displayed, and used to size and label the offer. It decides nothing: the
+   * session route re-checks under the reservation lock and clamps whatever is
+   * sent, so a tampered page can only ever be refused.
    */
-  practiceAllowance?: PracticeUsage | null;
+  practiceUsage: PracticeUsage;
+  /** From the server-resolved entitlement. Only Free sees allowance copy. */
+  tier: BillingTier;
 }
 
 type PracticeMode = "practice" | "timed";
@@ -84,14 +85,20 @@ const QUESTION_COUNTS = [10, 20, 30, 40] as const;
 const DEFAULT_COUNT = 20;
 
 /**
- * The sizes a question-counted plan may choose from: never more than can still
- * be started. With four left that is 1–4; with two, 1–2; with none, nothing.
+ * The session sizes this plan may choose from.
+ *
+ * Never larger than the plan's ceiling, so a Free student is offered 10 and 20
+ * rather than being shown 30 and 40 and refused — or, worse, silently given
+ * fewer questions than the button they pressed. Master is offered all four.
+ *
+ * The ceiling is always included even if it is not one of the standard sizes,
+ * so a plan can never lose the ability to build its own largest session.
  */
-export function allowedQuestionCounts(available: number): number[] {
-  if (available < 1) return [];
-  const sizes = [1, 2, 3, 4, 5, ...QUESTION_COUNTS].filter((count) => count <= available);
-  if (!sizes.includes(available)) sizes.push(available);
-  return [...new Set(sizes)].sort((a, b) => a - b).slice(-4);
+export function allowedQuestionCounts(maxQuestionsPerSession: number): number[] {
+  const ceiling = Math.max(1, Math.floor(maxQuestionsPerSession));
+  const sizes: number[] = QUESTION_COUNTS.filter((count) => count <= ceiling);
+  if (!sizes.includes(ceiling)) sizes.push(ceiling);
+  return [...new Set(sizes)].sort((a, b) => a - b);
 }
 
 const UNAVAILABLE_EXPLANATION =
@@ -133,12 +140,20 @@ export function PracticeSetup({
   prefillFromRecommendation,
   initialMode = "practice",
   resumeSession,
-  practiceAllowance = null,
+  practiceUsage,
+  tier,
 }: PracticeSetupProps) {
-  const metered = Boolean(practiceAllowance);
-  const available = practiceAllowance?.available ?? 0;
-  const countOptions: readonly number[] = metered ? allowedQuestionCounts(available) : QUESTION_COUNTS;
-  const sizeFor = (count: number) => (metered ? Math.max(1, Math.min(count, available)) : count);
+  const isFree = tier === "free";
+  const ceiling = practiceUsage.maxQuestionsPerSession;
+  const countOptions = allowedQuestionCounts(ceiling);
+  const sizeFor = (count: number) => Math.max(1, Math.min(count, ceiling));
+  /*
+   * No new session may be started. Either today's is still running — in which
+   * case the student is sent back to it — or it is finished, and Master is what
+   * changes that. A null count is an unreadable ledger, never a refusal.
+   */
+  const sessionsLeft = practiceUsage.remaining;
+  const blockedByAllowance = sessionsLeft !== null && sessionsLeft < 1;
   const router = useRouter();
   const unavailable = useMemo(() => new Set(unavailableSubjects), [unavailableSubjects]);
   const availableSubjects = useMemo(
@@ -186,9 +201,8 @@ export function PracticeSetup({
     () => (prefillFromRecommendation ? prefill?.topicSlug : undefined) ?? "all",
   );
   const [chosenCount, setQuestionCount] = useState<number>(() => sizeFor(DEFAULT_COUNT));
-  // Never offer, label or send more than the allowance can start.
+  // Never offer, label or send a session larger than the plan may build.
   const questionCount = sizeFor(chosenCount);
-  const blockedByAllowance = metered && available < 1;
   const [mode, setMode] = useState<PracticeMode>(initialMode);
   const [difficulty, setDifficulty] = useState<QuestionDifficulty | "mixed">("mixed");
   const [year, setYear] = useState("all");
@@ -311,7 +325,7 @@ export function PracticeSetup({
         ))}
       </nav>
 
-      {practiceAllowance ? <FreePracticeStatus allowance={practiceAllowance} /> : null}
+      {isFree ? <FreePracticeStatus usage={practiceUsage} /> : null}
 
       {resumeSession ? (
         <button
@@ -441,18 +455,16 @@ export function PracticeSetup({
         <div className="grid grid-cols-2 gap-5">
           <div>
             <h2 className={typography.h2} id="practice-count-label">Questions</h2>
-            {metered ? (
+            {isFree ? (
               <p id="practice-count-note" className="mt-1 text-[11px] leading-4 text-slate-500">
-                {available > 0
-                  ? `Free plan: up to ${countNoun(available, "question")} right now`
-                  : "No free questions left to start today"}
+                Free plan: up to {ceiling} questions in a session
               </p>
             ) : null}
             <div
               className="mt-2.5 flex gap-1.5"
               role="group"
               aria-labelledby="practice-count-label"
-              aria-describedby={metered ? "practice-count-note" : undefined}
+              aria-describedby={isFree ? "practice-count-note" : undefined}
             >
               {countOptions.map((count) => (
                 <button
@@ -542,7 +554,11 @@ export function PracticeSetup({
           loadingLabel="Building session…"
           iconBefore={<Clock3 className="h-4 w-4" aria-hidden="true" />}
         >
-          {blockedByAllowance ? "No free questions left to start today" : `Start ${questionCount}-question session`}
+          {blockedByAllowance
+            ? practiceUsage.activeSession
+              ? "Today’s session is already in progress"
+              : "Today’s free practice session has been used"
+            : `Start ${questionCount}-question session`}
         </Button>
         <p className="mt-2 text-center text-[11px] text-slate-500">
           Your question set is frozen when the session starts, so refreshes and resumes stay consistent.
@@ -555,18 +571,23 @@ export function PracticeSetup({
 /**
  * Where a Free student stands before they build anything.
  *
- * The counts are the server's. The three states that matter each get their own
- * sentence: one question left, none left, and "what is left is already waiting
- * in a session you haven't finished" — which is not the same as used up, and
- * must not be described as if it were.
+ * The counts are the server's. Three states, and the difference between them is
+ * the whole point:
+ *
+ *   - a session is available    → say so, and let them build it;
+ *   - today's is still running  → send them back to it, with Master beside it,
+ *                                 never instead of it. Nothing has been lost;
+ *   - today's is finished       → say that plainly, and say what Master changes.
+ *
+ * Only the third is a dead end, and only the third leads with an upgrade.
  */
-function FreePracticeStatus({ allowance }: { allowance: PracticeUsage }) {
-  const { remaining, limit, waiting, available } = allowance;
+function FreePracticeStatus({ usage }: { usage: PracticeUsage }) {
+  const { remaining, limit, activeSession } = usage;
 
   if (remaining === null) {
     return (
       <InlineAlert tone="warning" role="status">
-        We couldn’t check today’s free practice questions just now. Try again in a moment.
+        We couldn’t check today’s free practice session just now. Try again in a moment.
       </InlineAlert>
     );
   }
@@ -576,27 +597,36 @@ function FreePracticeStatus({ allowance }: { allowance: PracticeUsage }) {
     <div className="space-y-2.5">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] text-slate-700">
         <Badge tone="neutral">Free plan</Badge>
-        <span className="font-semibold text-slate-950">{practiceRemainingLine(remaining, limit)}</span>
-        <span className="text-slate-500">· {resetLine(allowance.resetAt, "day")}</span>
+        <span className="font-semibold text-slate-950">
+          {remaining > 0
+            ? practiceAvailableLine(remaining)
+            : activeSession
+              ? "Today’s practice session is already in progress"
+              : "Today’s free practice session has been used"}
+        </span>
+        <span className="text-slate-500">· {resetLine(usage.resetAt, "day")}</span>
       </p>
 
-      {remaining > 0 && waiting && available === 0 ? (
-        <InlineAlert tone="brand" role="status">
-          Your {countNoun(remaining, "remaining question")} {remaining === 1 ? "is" : "are"} waiting in a session you haven’t
-          finished. Continue it to use {remaining === 1 ? "it" : "them"}.
-        </InlineAlert>
-      ) : null}
-
-      {remaining === 0 ? (
+      {remaining > 0 ? (
+        <p className="text-[11.5px] leading-4 text-slate-500">
+          Up to {usage.maxQuestionsPerSession} questions. You can leave and come back to it — only starting a new
+          session uses today’s.
+        </p>
+      ) : activeSession ? (
+        <AllowanceNotice
+          emphasis="subtle"
+          message="Finish the session you started — resuming it never uses another."
+          upgrade={PRACTICE_SESSION_IN_PROGRESS.upgrade}
+          source="practice_session_in_progress"
+        />
+      ) : (
         <AllowanceNotice
           message={exhausted.message}
           upgrade={exhausted.upgrade}
           source="practice_exhausted"
           detail="Your results, answers and mistake bank stay available."
         />
-      ) : remaining === 1 ? (
-        <AllowanceNotice emphasis="subtle" message={PRACTICE_ONE_REMAINING} source="practice_one_remaining" />
-      ) : null}
+      )}
     </div>
   );
 }

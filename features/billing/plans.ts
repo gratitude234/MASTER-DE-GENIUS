@@ -105,23 +105,23 @@ export function purchasablePlans(): readonly BillingPlan[] {
 }
 
 /**
- * How a tier's practice allowance is counted.
+ * What a tier's practice allowance permits.
  *
- * `question` — first answers to practice questions, account-wide, per day. A
- * session can never be built larger than what is left, and every question it
- * contains is held against the allowance until it is answered.
+ * `sessionsPerDay` — how many *new* practice sessions may be created per day,
+ * account-wide, whatever their size. A session is counted once, when it is
+ * successfully created; resuming, refreshing, answering, finishing, reviewing
+ * and reopening it are free forever.
  *
- * `session` — practice sessions created per day, whatever their size.
+ * `maxQuestionsPerSession` — the largest paper this plan may build. Free is
+ * capped at 20 so its one daily session is a real session rather than a token
+ * one; Master keeps the 40 the setup screen has always offered.
  *
- * Every route branches on this unit, never on the tier name, so switching Free
- * back to session counting is a change to this file alone. That is the
- * configuration-level rollback described in MONETIZATION-NOTES.md.
+ * This replaced the short-lived per-question Free meter ("4 practice questions
+ * a day"). Nothing in the product counts practice questions any more.
  */
-export type PracticeAllowanceUnit = "question" | "session";
-
 export interface PracticeAllowance {
-  readonly unit: PracticeAllowanceUnit;
-  readonly perDay: number;
+  readonly sessionsPerDay: number;
+  readonly maxQuestionsPerSession: number;
 }
 
 /**
@@ -132,8 +132,9 @@ export interface PracticeAllowance {
  * exhausting the question provider's quota for everybody, and it applies to
  * paying and free students alike.
  *
- * Every allowance is account-wide — never per subject, exam, device or session —
- * and every day and month is a calendar day or month in Africa/Lagos (WAT).
+ * Every allowance is account-wide — never per subject, exam, device, browser or
+ * session — and every day and month is a calendar day or month in Africa/Lagos
+ * (WAT). A student preparing for both JAMB and WAEC has one allowance, not two.
  */
 export interface TierLimits {
   readonly practice: PracticeAllowance;
@@ -144,21 +145,38 @@ export interface TierLimits {
   readonly aiExplanationsPerDay: number;
 }
 
+/**
+ * The one table in the product that holds a plan number.
+ *
+ * Free:   1 practice session a day (up to 20 questions), 2 full mocks a
+ *         calendar month, 2 new MASTER AI explanations a day.
+ * Master: unchanged by the Free plan revision.
+ */
 export const TIER_LIMITS: Record<BillingTier, TierLimits> = {
   free: {
-    practice: { unit: "question", perDay: 4 },
+    practice: { sessionsPerDay: 1, maxQuestionsPerSession: 20 },
     mockAttempts: 2,
     mockAttemptWindow: "month",
     aiExplanationsPerDay: 2,
   },
-  // Unchanged by the Free plan revision. Master keeps exactly what it sold.
+  // Master keeps exactly what it sold: 40 questions is the ceiling the practice
+  // setup screen has always offered, so naming it here changes nothing.
   master: {
-    practice: { unit: "session", perDay: 200 },
+    practice: { sessionsPerDay: 200, maxQuestionsPerSession: 40 },
     mockAttempts: 3,
     mockAttemptWindow: "day",
     aiExplanationsPerDay: 20,
   },
 };
+
+/**
+ * The absolute ceiling any plan may build, so request validation can reject a
+ * crafted `count` before a plan is even resolved. The plan's own
+ * `maxQuestionsPerSession` is what actually clamps a student's session.
+ */
+export const PRACTICE_MAX_QUESTIONS = Math.max(
+  ...Object.values(TIER_LIMITS).map((limits) => limits.practice.maxQuestionsPerSession),
+);
 
 export function limitsForTier(tier: BillingTier): TierLimits {
   return TIER_LIMITS[tier];

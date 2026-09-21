@@ -12,9 +12,9 @@ registerAliasHook();
  *
  * The database decides every charge (tests/free-plan-quota-database.test.mjs).
  * What these tests pin down is that the application always asks the right
- * function with the right arguments, never charges on the paths that must be
- * free, and never lets a Free student's browser receive a question the
- * allowance does not cover.
+ * function with the right arguments and never charges on the paths that must be
+ * free — which, since practice is counted in sessions at creation, is every
+ * path except creating one.
  */
 
 const stub = (source) => ({ url: 'data:text/javascript,' + encodeURIComponent(source), shortCircuit: true });
@@ -54,8 +54,8 @@ registerHooks({
   },
 });
 
-const FREE = { tier: 'free', isMaster: false, plan: null, expiresAt: null, limits: { practice: { unit: 'question', perDay: 4 }, mockAttempts: 2, mockAttemptWindow: 'month', aiExplanationsPerDay: 2 } };
-const MASTER = { tier: 'master', isMaster: true, plan: null, expiresAt: '2099-01-01T00:00:00Z', limits: { practice: { unit: 'session', perDay: 200 }, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 } };
+const FREE = { tier: 'free', isMaster: false, plan: null, expiresAt: null, limits: { practice: { sessionsPerDay: 1, maxQuestionsPerSession: 20 }, mockAttempts: 2, mockAttemptWindow: 'month', aiExplanationsPerDay: 2 } };
+const MASTER = { tier: 'master', isMaster: true, plan: null, expiresAt: '2099-01-01T00:00:00Z', limits: { practice: { sessionsPerDay: 200, maxQuestionsPerSession: 40 }, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 } };
 
 /**
  * A scripted stand-in for the service-role client: table reads come from
@@ -220,54 +220,38 @@ test('36. Master keeps twenty a day, and is never offered an upgrade', async () 
 
 // ──────────────────────────────────────────────── practice: the answer path
 
-const quota = await import('../features/billing/quota.ts');
 const practice = await import('../features/practice/service.ts');
-const METER = { dayKey: '2026-09-21', limit: 4, resetAt: new Date('2026-09-21T23:00:00Z'), tier: 'free' };
 const RECEIPT = {
   selected_option_key: 'A', is_correct: true, correct_option_key: 'A', explanation: 'x',
-  answered_count: 1, question_count: 4, mode: 'practice', revision: 1, mutation_id: 'm1',
+  answered_count: 1, question_count: 20, mode: 'practice', revision: 1, mutation_id: 'm1',
 };
 
-test('a Free answer goes through the metered function, with the day and the limit', async () => {
-  const admin = fakeAdmin({ rpcs: { save_metered_practice_response: { data: { ...RECEIPT, allowance: { limit: 4, used: 1, waiting: 2, remaining: 3, available: 1 } }, error: null } } });
-  globalThis.__admin = admin;
-  const result = await practice.savePracticeAnswerForUser(USER, SESSION, QUESTION, 'A', 0, 'm1', METER);
-
-  assert.equal(admin.calls[0].name, 'save_metered_practice_response');
-  assert.equal(admin.calls[0].args.p_day_key, '2026-09-21');
-  assert.equal(admin.calls[0].args.p_limit, 4);
-  assert.deepEqual(result.allowance, { limit: 4, used: 1, waiting: 2, remaining: 3, available: 1 });
-});
-
-test('an exhausted allowance surfaces as a typed refusal, not a generic error', async () => {
-  globalThis.__admin = fakeAdmin({ rpcs: { save_metered_practice_response: { data: null, error: { message: 'FREE_PRACTICE_LIMIT' } } } });
-  await assert.rejects(
-    practice.savePracticeAnswerForUser(USER, SESSION, QUESTION, 'A', 0, 'm1', METER),
-    (error) => error instanceof quota.PracticeAllowanceExhausted && error.meter === METER,
-  );
-});
-
-test('15/37. a Master answer takes the unchanged path — no meter, no ledger, no allowance', async () => {
+test('9/15. answering is never metered — the plan counted the session, not the answer', async () => {
   const admin = fakeAdmin({ rpcs: { save_response_v2: { data: RECEIPT, error: null } } });
   globalThis.__admin = admin;
-  const result = await practice.savePracticeAnswerForUser(USER, SESSION, QUESTION, 'A', 0, 'm1', null);
+  const result = await practice.savePracticeAnswerForUser(USER, SESSION, QUESTION, 'A', 0, 'm1');
 
-  assert.equal(admin.calls[0].name, 'save_response_v2');
+  assert.equal(admin.calls[0].name, 'save_response_v2', 'the unchanged answer function, on every tier');
   assert.equal(admin.calls[0].args.p_kind, 'practice');
-  assert.equal(result.allowance, undefined);
+  assert.deepEqual(named(admin, 'save_metered_practice_response'), [], 'no ledger is consulted');
+  assert.equal(result.allowance, undefined, 'an answer carries no allowance back');
+  assert.equal(result.selectedOptionKey, 'A');
 });
 
-test('37–39. the meter follows the entitlement: Free counts questions, Master and upgraded students do not', () => {
-  assert.ok(quota.practiceMeterFor(FREE));
-  assert.equal(quota.practiceMeterFor(FREE).limit, 4);
-  assert.equal(quota.practiceMeterFor(MASTER), null, 'active Master bypasses the Free question limit');
-  // A lapsed Master resolves to Free limits, so the meter returns with it.
-  assert.ok(quota.practiceMeterFor({ tier: 'free', limits: FREE.limits }));
+test('9b. a Free student answers through exactly the same function as Master', async () => {
+  // There is no Free answer path any more, so there is nothing for a tier to
+  // branch on: the signature has no meter to pass.
+  assert.equal(practice.savePracticeAnswerForUser.length, 6, 'userId, session, question, option, revision, mutation');
+});
+
+test('2. creating a session does not consult a question ledger', async () => {
+  assert.equal(practice.createPracticeSessionForUser.length, 2, 'userId and input — no meter argument');
+  assert.equal(practice.loadPracticeSessionForUser.length, 2, 'userId and sessionId — opening is never gated');
 });
 
 // ─────────────────────────────────────── practice: what the browser receives
 
-function sessionTables({ status = 'in_progress', mode = 'practice', count = 6, answered = [], held = [] } = {}) {
+function sessionTables({ status = 'in_progress', mode = 'practice', count = 6, answered = [] } = {}) {
   return {
     practice_sessions: [{
       id: SESSION, user_id: USER, mode, status, subject_id: 'subject-1', topic_id: null, difficulty: null, year_filter: null,
@@ -277,80 +261,63 @@ function sessionTables({ status = 'in_progress', mode = 'practice', count = 6, a
     subjects: [{ id: 'subject-1', slug: 'physics', name: 'Physics' }],
     topics: [],
     practice_session_questions: Array.from({ length: count }, (_, i) => ({
-      id: `q${i + 1}`, session_id: SESSION, position: i + 1, correct_option_key: 'A', explanation: 'Because A.',
+      id: 'q' + (i + 1), session_id: SESSION, position: i + 1, correct_option_key: 'A', explanation: 'Because A.',
       student_snapshot: {
-        id: `snap-${i + 1}`, examBody: 'jamb', subject: { id: 'subject-1', slug: 'physics', name: 'Physics' },
-        prompt: `Secret question ${i + 1}`, passage: { id: 'p', body: 'Secret passage' }, instruction: 'Secret instruction',
-        options: [{ id: 'o1', key: 'A', text: 'Secret option' }], assets: [{ url: 'https://img.invalid/secret.png' }],
-        source: { provider: 'internal', providerQuestionId: `provider-${i + 1}` },
+        id: 'snap-' + (i + 1), examBody: 'jamb', subject: { id: 'subject-1', slug: 'physics', name: 'Physics' },
+        prompt: 'Question ' + (i + 1), passage: { id: 'p', body: 'Passage' }, instruction: 'Instruction',
+        options: [{ id: 'o1', key: 'A', text: 'Option' }], assets: [{ url: 'https://img.invalid/a.png' }],
+        source: { provider: 'internal', providerQuestionId: 'provider-' + (i + 1) },
       },
     })),
     practice_answers: answered.map((id) => ({ session_id: SESSION, session_question_id: id, user_id: USER, selected_option_key: 'A', is_correct: true })),
     response_revisions: [],
-    practice_question_usage: held.map((id) => ({ session_question_id: id, user_id: USER, session_id: SESSION, state: 'held' })),
   };
 }
 
-async function loadGated(options, allowance, meter = METER) {
-  globalThis.__admin = fakeAdmin({
-    tables: sessionTables(options),
-    rpcs: { practice_question_allowance: { data: [{ allowance: 4, used: 0, waiting: 0, remaining: 4, available: 4, ...allowance }], error: null } },
-  });
-  return practice.loadPracticeSessionForUser(USER, SESSION, meter);
+async function loadSession(options) {
+  globalThis.__admin = fakeAdmin({ tables: sessionTables(options) });
+  return practice.loadPracticeSessionForUser(USER, SESSION);
 }
 
-test('legacy session: only today’s remaining questions are delivered; the rest never leave the server', async () => {
-  const view = await loadGated({ count: 6, answered: ['q1'] }, { available: 2, remaining: 2 });
-  const byId = Object.fromEntries(view.questions.map((q) => [q.id, q]));
+test('8/9/14. an in-progress session opens whole — nothing is withheld on resume', async () => {
+  /*
+   * The delivery gate is gone with the question meter. A session that exists was
+   * paid for out of the day's allowance when it was created, so every question
+   * in it is delivered whenever the student comes back to it.
+   */
+  const view = await loadSession({ count: 6, answered: ['q1'] });
 
-  assert.equal(byId.q1.locked, undefined, 'the student’s own answered question is always shown');
-  assert.equal(byId.q2.locked, undefined);
-  assert.equal(byId.q3.locked, undefined);
-  for (const id of ['q4', 'q5', 'q6']) {
-    assert.equal(byId[id].locked, true, `${id} is beyond today’s allowance`);
-    assert.equal(byId[id].question.prompt, '');
-    assert.deepEqual(byId[id].question.options, []);
-    assert.deepEqual(byId[id].question.assets, []);
-    assert.equal(byId[id].question.passage, null);
-    assert.equal(byId[id].question.instruction, null);
-  }
-  const payload = JSON.stringify(view);
-  assert.ok(!payload.includes('Secret question 4') && !payload.includes('provider-4'), 'no trace of a locked question in the payload');
-  assert.equal(view.questionCount, 6, 'the frozen paper keeps its size; nothing is rewritten');
+  assert.equal(view.questions.length, 6);
+  assert.ok(view.questions.every((q) => q.locked === undefined), 'no question is withheld');
+  assert.ok(view.questions.every((q) => q.held === undefined), 'nothing is "held" any more');
+  assert.ok(view.questions.every((q) => q.question.prompt.startsWith('Question')), 'every stem is delivered');
+  assert.equal('practiceAllowance' in view, false, 'a session view carries no allowance');
 });
 
-test('held questions are always delivered, even when nothing more can be started', async () => {
-  const view = await loadGated({ count: 4, held: ['q1', 'q2', 'q3', 'q4'] }, { available: 0, remaining: 4, waiting: 4 });
-  assert.ok(view.questions.every((q) => !q.locked && q.held));
-  assert.equal(view.practiceAllowance.waiting, 4);
-});
-
-test('an unreadable allowance fails closed on delivery, but still shows the student’s own work', async () => {
-  globalThis.__admin = fakeAdmin({
-    tables: sessionTables({ count: 3, answered: ['q1'] }),
-    rpcs: { practice_question_allowance: { data: null, error: { code: 'XX000' } } },
-  });
-  const view = await practice.loadPracticeSessionForUser(USER, SESSION, METER);
-  assert.equal(view.questions.find((q) => q.id === 'q1').locked, undefined);
-  assert.ok(view.questions.filter((q) => q.id !== 'q1').every((q) => q.locked));
-  assert.equal(view.practiceAllowance, null);
+test('14. a legacy session built under the old per-question plan still opens whole', async () => {
+  // Its rows may still carry ledger history; the loader no longer reads any, so
+  // a paper frozen under the old plan resumes intact rather than half-locked.
+  const view = await loadSession({ count: 40, answered: ['q1', 'q2'] });
+  assert.equal(view.questions.length, 40);
+  assert.ok(view.questions.every((q) => !q.locked));
+  assert.equal(view.questionCount, 40, 'the frozen paper keeps its size; nothing is rewritten');
 });
 
 test('a completed session is never gated — review is not a plan feature', async () => {
-  const view = await loadGated({ status: 'completed', count: 5 }, { available: 0, remaining: 0 });
+  const view = await loadSession({ status: 'completed', count: 5 });
   assert.ok(view.questions.every((q) => !q.locked));
-});
-
-test('Master sees every question and no allowance at all', async () => {
-  const view = await loadGated({ count: 10 }, { available: 0 }, null);
-  assert.ok(view.questions.every((q) => !q.locked));
-  assert.equal('practiceAllowance' in view, false);
 });
 
 // ──────────────────────────────────────────────────── the offline queue
 
 const { DurableQueue, SyncFailure } = await import('../features/offline/queue.ts');
 
+/**
+ * Nothing refuses a practice answer with PLAN_LIMIT any more — the plan counts
+ * sessions at creation. The queue keeps the defensive path regardless: a 402 a
+ * retry cannot fix must drop, revert and stop, or the queue would spin for ever
+ * and "Finish" would never be reachable.
+ */
 test('a PLAN_LIMIT refusal is final for that answer: dropped, reverted, and never retried', async () => {
   const record = {
     key: 'u:practice:s', userId: 'u', kind: 'practice', id: 's', version: 1, view: {},
@@ -360,7 +327,7 @@ test('a PLAN_LIMIT refusal is final for that answer: dropped, reverted, and neve
   let sends = 0;
   const queue = new DurableQueue(record, async () => {}, async (id, pending) => {
     sends += 1;
-    if (id === 'locked') throw new SyncFailure('You’ve used today’s 4 free practice questions.', 'PLAN_LIMIT');
+    if (id === 'locked') throw new SyncFailure('You’ve used today’s free practice session.', 'PLAN_LIMIT');
     return { ...pending, revision: 1 };
   });
 

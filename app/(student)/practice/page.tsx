@@ -61,7 +61,8 @@ export default async function PracticePage({
       subjectCapabilities={capabilities.bySubject}
       unavailableSubjects={unavailableSubjects}
       resumeSession={activeSession}
-      practiceAllowance={usage.practice.unit === "question" ? usage.practice : null}
+      practiceUsage={usage.practice}
+      tier={usage.tier}
       recommendation={recommendation}
       prefillFromRecommendation={prefillFromRecommendation}
       initialMode={params.timed === "1" ? "timed" : "practice"}

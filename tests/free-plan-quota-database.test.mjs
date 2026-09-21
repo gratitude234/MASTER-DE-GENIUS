@@ -9,10 +9,10 @@ import { registerAliasHook } from '../scripts/alias-hook.mjs';
 registerAliasHook();
 
 /**
- * Free plan v2 — the guarantees that have to hold in PostgreSQL itself.
+ * The Free plan — the guarantees that have to hold in PostgreSQL itself.
  *
- *   4 practice questions a day, 2 mocks a month, 2 new MASTER AI explanations a
- *   day, account-wide, on the Lagos calendar.
+ *   1 new practice session a day (up to 20 questions), 2 mocks a month, 2 new
+ *   MASTER AI explanations a day, account-wide, on the Lagos calendar.
  *
  * Application code can be bypassed by a second entry point or a future
  * refactor; these run the real migrations and call the functions every route
@@ -29,7 +29,10 @@ registerAliasHook();
 const MIGRATION = 'supabase/migrations/20260921100000_free_plan_conversion_quotas.sql';
 const DAY = '2026-09-21';
 const NEXT_DAY = '2026-09-22';
-const LIMIT = 4;
+/** The Free practice allowance: one new session a day. */
+const LIMIT = 1;
+/** The Free per-day allowance the cancelled question meter used, for legacy fixtures. */
+const LEGACY_QUESTION_LIMIT = 4;
 
 let db;
 let jamb;
@@ -71,8 +74,14 @@ function paper(count, prefix = 'q') {
   })));
 }
 
-/** The Free path: create_metered_practice_session, exactly as the route calls it. */
-async function metered(user, count, { day = DAY, exam = 'jamb', subject = 'physics', mode = 'practice', limit = LIMIT } = {}) {
+/**
+ * A session built by the cancelled per-question meter.
+ *
+ * Retained to build *legacy* fixtures: papers frozen before this release may
+ * still exist, and the compatibility rule is that they open and finish
+ * normally. No application path calls this function any more.
+ */
+async function metered(user, count, { day = DAY, exam = 'jamb', subject = 'physics', mode = 'practice', limit = LEGACY_QUESTION_LIMIT } = {}) {
   const examId = exam === 'jamb' ? jamb : waec;
   const subjectId = subjects(exam, subject) ?? subjects(exam);
   const duration = mode === 'timed' ? count * 60 : null;
@@ -105,8 +114,8 @@ async function revision(user, session, question) {
   return rows[0]?.revision ?? 0;
 }
 
-/** The Free answer path: save_metered_practice_response. */
-async function answer(user, session, question, { day = DAY, key = 'A', mutation = randomUUID(), limit = LIMIT, expected } = {}) {
+/** The cancelled metered answer path. Legacy fixtures only. */
+async function answer(user, session, question, { day = DAY, key = 'A', mutation = randomUUID(), limit = LEGACY_QUESTION_LIMIT, expected } = {}) {
   const rev = expected ?? await revision(user, session, question);
   const { rows } = await db.query(
     'select save_metered_practice_response($1,$2,$3,$4,$5,$6,$7,$8) as result',
@@ -115,7 +124,7 @@ async function answer(user, session, question, { day = DAY, key = 'A', mutation 
   return rows[0].result;
 }
 
-async function allowance(user, day = DAY, limit = LIMIT) {
+async function allowance(user, day = DAY, limit = LEGACY_QUESTION_LIMIT) {
   return (await db.query('select * from practice_question_allowance($1,$2,$3)', [user, day, limit])).rows[0];
 }
 
@@ -123,278 +132,188 @@ async function ledgerRows(user) {
   return (await db.query('select count(*)::int as total from practice_question_usage where user_id=$1', [user])).rows[0].total;
 }
 
-const LIMIT_ERROR = /FREE_PRACTICE_LIMIT/;
-
 // ───────────────────────────────────────────────────── FREE PRACTICE
 
-test('1. a new Free student has 4 of 4 practice questions', async () => {
+/**
+ * One new practice session a day, account-wide, of up to 20 questions.
+ *
+ * The counting mechanism is `reserve_product_quota`, the same one mocks use:
+ * the student's window row is locked before the count, so two requests landing
+ * on different serverless instances serialise there. Practice is no longer
+ * metered per question — `create_practice_session` writes no ledger row, and
+ * answering writes none either.
+ */
+
+async function reservePractice(user, day = DAY, limit = LIMIT) {
+  return (await db.query('select * from reserve_product_quota($1,$2,$3,$4,120)', [user, 'practice_session', day, limit])).rows[0];
+}
+async function practiceUsage(user, day = DAY) {
+  return (await db.query(`select product_quota_usage($1,'practice_session',$2) as used`, [user, day])).rows[0].used;
+}
+async function startSession(user, options = {}) {
+  const reservation = await reservePractice(user, options.day, options.limit);
+  if (!reservation.allowed) return { allowed: false, session: null };
+  const session = await unmetered(user, options.count ?? 20, options);
+  await db.query('select commit_product_quota($1)', [reservation.reservation_id]);
+  return { allowed: true, session };
+}
+
+test('1. a new Free student has one practice session available today', async () => {
   const user = await student();
-  assert.deepEqual(await allowance(user), { allowance: 4, used: 0, waiting: 0, remaining: 4, available: 4 });
+  assert.equal(await practiceUsage(user), 0);
+  assert.equal((await reservePractice(user)).remaining, 0, 'one session, so reserving it leaves none');
 });
 
-test('2. answering one practice question leaves 3', async () => {
+test('2-3. the first new session spends the day, and may hold 20 questions', async () => {
   const user = await student();
-  const session = await metered(user, 1);
-  const [q] = await questions(session);
-  const result = await answer(user, session, q);
+  const { allowed, session } = await startSession(user, { count: 20 });
 
-  assert.equal(result.allowance.used, 1);
-  assert.equal(result.allowance.remaining, 3);
-  assert.equal((await allowance(user)).remaining, 3);
+  assert.equal(allowed, true);
+  assert.equal((await questions(session)).length, 20, 'a Free session may be the full 20');
+  assert.equal(await practiceUsage(user), 1, 'today is spent');
+  assert.equal(await ledgerRows(user), 0, 'no per-question ledger row is written any more');
 });
 
-test('2b. answering one question of a larger session leaves 3 remaining, with the rest waiting', async () => {
+test('5. a second new session the same day is refused', async () => {
   const user = await student();
-  const session = await metered(user, 3);
-  const [q1] = await questions(session);
-  await answer(user, session, q1);
-
-  assert.deepEqual(await allowance(user), { allowance: 4, used: 1, waiting: 2, remaining: 3, available: 1 });
+  await startSession(user);
+  assert.equal((await reservePractice(user)).allowed, false);
 });
 
-test('3–5. four questions across three subjects exhaust one shared allowance; the fifth is refused', async () => {
+test('6-7. a different subject and a different exam body share the one allowance', async () => {
   const user = await student();
-  // 2 Biology + 1 Chemistry + 1 Mathematics, exactly as the product brief describes.
-  const biology = await metered(user, 2, { subject: 'biology' });
-  for (const q of await questions(biology)) await answer(user, biology, q);
-  const chemistry = await metered(user, 1, { subject: 'chemistry' });
-  await answer(user, chemistry, (await questions(chemistry))[0]);
-  const maths = await metered(user, 1, { subject: 'mathematics' });
-  await answer(user, maths, (await questions(maths))[0]);
+  await startSession(user, { exam: 'jamb', subject: 'physics' });
 
-  assert.deepEqual(await allowance(user), { allowance: 4, used: 4, waiting: 0, remaining: 0, available: 0 });
-  await assert.rejects(metered(user, 1, { subject: 'physics' }), LIMIT_ERROR, 'a new subject does not reset or multiply it');
-
-  const sessions = (await db.query('select count(*)::int as total from practice_sessions where user_id=$1', [user])).rows[0].total;
-  assert.equal(sessions, 3, 'the refused session was never created, so its questions never existed');
+  // The window key carries the day and nothing else — no subject, no exam. A
+  // student preparing for both JAMB and WAEC has one allowance, not two.
+  assert.equal((await reservePractice(user)).allowed, false, 'Biology does not get a second session');
+  assert.equal(await practiceUsage(user), 1);
 });
 
-test('6. JAMB and WAEC share one allowance', async () => {
+test('8-9. resuming, answering and finishing never spend another session', async () => {
   const user = await student();
-  const jambSession = await metered(user, 3, { exam: 'jamb' });
-  for (const q of await questions(jambSession)) await answer(user, jambSession, q);
+  const { session } = await startSession(user, { count: 5 });
+  const ids = await questions(session);
 
-  await assert.rejects(metered(user, 2, { exam: 'waec' }), LIMIT_ERROR, 'WAEC is not another 4');
-  const waecSession = await metered(user, 1, { exam: 'waec' });
-  await answer(user, waecSession, (await questions(waecSession))[0]);
-  assert.equal((await allowance(user)).remaining, 0);
-});
-
-test('7. a new session can never contain more questions than remain', async () => {
-  const user = await student();
-  await assert.rejects(metered(user, 5), LIMIT_ERROR, 'a 5-question paper on a 4-question day');
-  const first = await metered(user, 2);
-  for (const q of await questions(first)) await answer(user, first, q);
-
-  await assert.rejects(metered(user, 3), LIMIT_ERROR, '3 requested, 2 left');
-  const second = await metered(user, 2);
-  assert.equal((await questions(second)).length, 2);
-  await assert.rejects(metered(user, 1), LIMIT_ERROR, 'held questions already account for the rest');
-});
-
-test('8. reading the allowance — a refresh, a dashboard, a setup screen — consumes nothing', async () => {
-  const user = await student();
-  const session = await metered(user, 2);
-  const before = await ledgerRows(user);
-  for (let i = 0; i < 5; i++) await allowance(user);
-  await db.query('select * from practice_question_load($1,$2)', [user, DAY]);
-  assert.equal(await ledgerRows(user), before);
-  assert.deepEqual(await allowance(user), { allowance: 4, used: 0, waiting: 2, remaining: 4, available: 2 });
-  assert.ok(session);
-});
-
-test('9. a duplicate or retried answer submission is charged once', async () => {
-  const user = await student();
-  const legacy = await unmetered(user, 2);
-  const [q] = await questions(legacy);
-  const mutation = randomUUID();
-
-  const first = await answer(user, legacy, q, { mutation, expected: 0 });
-  const replay = await answer(user, legacy, q, { mutation, expected: 0 });
-  assert.equal(first.revision, 1);
-  assert.equal(replay.revision, 1, 'a lost acknowledgement replays the stored receipt');
-
-  // A second tap with a new mutation id: practice mode locks the first answer.
-  await answer(user, legacy, q, { key: 'B' });
-  assert.equal((await allowance(user)).used, 1);
-  assert.equal(await ledgerRows(user), 1);
-});
-
-test('9b. changing an answer in a timed session never charges a second question', async () => {
-  const user = await student();
-  const session = await metered(user, 2, { mode: 'timed' });
-  const [q] = await questions(session);
-  await answer(user, session, q, { key: 'A' });
-  await answer(user, session, q, { key: 'B' });
-  await answer(user, session, q, { key: 'A' });
-  const state = await allowance(user);
-  assert.equal(state.used, 1);
-  assert.equal(state.waiting, 1);
-});
-
-test('10–11. reviewing answers, results and the mistake bank reads — and consumes nothing', async () => {
-  const user = await student();
-  const session = await metered(user, 2);
-  const [q1] = await questions(session);
-  await answer(user, session, q1);
-  await db.query('select complete_practice_session($1,$2)', [user, session]);
-  const before = await allowance(user);
-
-  // Exactly what the results page and the mistake bank read.
-  await db.query('select * from practice_sessions where id=$1 and user_id=$2', [session, user]);
-  await db.query('select * from practice_session_questions where session_id=$1', [session]);
-  await db.query('select * from practice_answers where session_id=$1 and user_id=$2', [session, user]);
-  assert.deepEqual(await allowance(user), before);
-});
-
-test('12. mock questions never consume the practice allowance', async () => {
-  const user = await student();
-  const blueprint = (await db.query('select id from exam_blueprints where exam_body_id=$1', [jamb])).rows[0].id;
-  const physics = subjects('jamb', 'physics');
-  const attempt = (await db.query(`insert into exam_attempts(user_id,exam_body_id,blueprint_id,exam_year,source_provider,status,duration_seconds,total_questions,started_at,expires_at)
-    values($1,$2,$3,2027,'internal','in_progress',3600,1,now(),now()+interval '1 hour') returning id`, [user, jamb, blueprint])).rows[0].id;
-  const section = (await db.query('insert into exam_attempt_subjects(attempt_id,subject_id,display_order,question_count) values($1,$2,1,1) returning id', [attempt, physics])).rows[0].id;
-  const eq = (await db.query(`insert into exam_attempt_questions(attempt_id,attempt_subject_id,subject_id,subject_position,overall_position,source_provider,source_question_id,student_snapshot,correct_option_key)
-    values($1,$2,$3,1,1,'internal','m1',$4,'A') returning id`, [attempt, section, physics, JSON.stringify({ options: [{ key: 'A' }] })])).rows[0].id;
-  await db.query(`select save_response_v2($1,'exam',$2,$3,'A',false,0,$4)`, [user, attempt, eq, randomUUID()]);
-
-  assert.deepEqual(await allowance(user), { allowance: 4, used: 0, waiting: 0, remaining: 4, available: 4 });
-});
-
-test('13. two tabs racing for the final question: exactly one is charged', async () => {
-  const user = await student();
-  // Three answered, then two unheld questions from a pre-release session.
-  const warmup = await metered(user, 3);
-  for (const q of await questions(warmup)) await answer(user, warmup, q);
-  const legacy = await unmetered(user, 2);
-  const [a, b] = await questions(legacy);
-
-  const results = await Promise.allSettled([answer(user, legacy, a, { expected: 0 }), answer(user, legacy, b, { expected: 0 })]);
-  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
-  assert.match(String(results.find((r) => r.status === 'rejected').reason), LIMIT_ERROR);
-  assert.equal((await allowance(user)).used, 4);
-
-  const refused = results.findIndex((r) => r.status === 'rejected');
-  const answers = (await db.query('select count(*)::int as total from practice_answers where session_question_id=$1', [[a, b][refused]])).rows[0].total;
-  assert.equal(answers, 0, 'the refused answer was never written — the charge and the answer are one transaction');
-});
-
-test('13b. racing session starts for the last questions: exactly one paper is built', async () => {
-  const user = await student();
-  const results = await Promise.allSettled(Array.from({ length: 6 }, () => metered(user, 2)));
-  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 2, '2 + 2 = 4 held, every other start refused');
-  assert.equal((await allowance(user)).available, 0);
-});
-
-test('14. the next Lagos day starts a fresh allowance', async () => {
-  const user = await student();
-  const session = await metered(user, 4);
-  for (const q of await questions(session)) await answer(user, session, q);
-  assert.equal((await allowance(user, DAY)).remaining, 0);
-
-  assert.deepEqual(await allowance(user, NEXT_DAY), { allowance: 4, used: 0, waiting: 0, remaining: 4, available: 4 });
-  const tomorrow = await metered(user, 4, { day: NEXT_DAY });
-  assert.equal((await questions(tomorrow)).length, 4);
-});
-
-test('15. a Master session writes nothing to the Free ledger', async () => {
-  const user = await student();
-  // Master's practice path is the unchanged one: create_practice_session and save_response_v2.
-  const session = await unmetered(user, 10);
-  for (const q of await questions(session)) {
-    await db.query(`select save_response_v2($1,'practice',$2,$3,'A',false,0,$4)`, [user, session, q, randomUUID()]);
+  // Answering goes through the unchanged response function, which touches no
+  // quota at all — so a student always finishes what they started.
+  for (const id of ids) {
+    const rev = await revision(user, session, id);
+    await db.query(`select save_response_v2($1,'practice',$2,$3,'A',false,$4,$5)`, [user, session, id, rev, randomUUID()]);
   }
+  await db.query('select * from complete_practice_session($1,$2)', [user, session]);
+
+  assert.equal(await practiceUsage(user), 1, 'one session created, one session charged');
   assert.equal(await ledgerRows(user), 0);
 });
 
-// ─────────────────────────────────────── holds, carried questions, legacy
-
-test('a held question is always answerable, even with nothing left to start', async () => {
+test('8b. reading the allowance — a refresh, a dashboard, a setup screen — spends nothing', async () => {
   const user = await student();
-  const session = await metered(user, 4);
-  assert.equal((await allowance(user)).available, 0);
-  for (const q of await questions(session)) await answer(user, session, q);
-  assert.equal((await allowance(user)).used, 4);
+  await startSession(user);
+  for (let i = 0; i < 5; i++) assert.equal(await practiceUsage(user), 1);
 });
 
-test('finishing a session with unanswered questions counts them — finishing reveals their answers', async () => {
+test('10. a session that is never created hands the day straight back', async () => {
   const user = await student();
-  const session = await metered(user, 4);
-  const [q1] = await questions(session);
-  await answer(user, session, q1);
-  await db.query('select complete_practice_session($1,$2)', [user, session]);
+  const reservation = await reservePractice(user);
+  await db.query('select release_product_quota($1)', [reservation.reservation_id]);
 
-  // "Start 4, finish at once, read the answers, repeat" must not be free.
-  assert.deepEqual(await allowance(user), { allowance: 4, used: 4, waiting: 0, remaining: 0, available: 0 });
-  await assert.rejects(metered(user, 1), LIMIT_ERROR);
+  assert.equal(await practiceUsage(user), 0, 'a provider outage costs nothing');
+  assert.equal((await reservePractice(user)).allowed, true, 'and the day is available again');
 });
 
-test('questions held yesterday stay answerable today and reserve today’s allowance', async () => {
+test('10b. an abandoned build stops counting once its lease runs out', async () => {
   const user = await student();
-  const session = await metered(user, 3, { day: DAY });
-  const [q1, q2, q3] = await questions(session);
-  await answer(user, session, q1, { day: DAY });
+  const pending = await reservePractice(user);
+  assert.equal(await practiceUsage(user), 1, 'a session being built already counts');
 
-  const today = await allowance(user, NEXT_DAY);
-  assert.deepEqual(today, { allowance: 4, used: 0, waiting: 2, remaining: 4, available: 2 });
-  await assert.rejects(metered(user, 3, { day: NEXT_DAY }), LIMIT_ERROR, 'carried questions are not double-spent');
-
-  await answer(user, session, q2, { day: NEXT_DAY });
-  await answer(user, session, q3, { day: NEXT_DAY });
-  assert.deepEqual(await allowance(user, NEXT_DAY), { allowance: 4, used: 2, waiting: 0, remaining: 2, available: 2 });
+  await db.query(`update product_usage_reservations set lease_expires_at = now() - interval '1 second' where id=$1`, [pending.reservation_id]);
+  assert.equal(await practiceUsage(user), 0, 'an abandoned build does not');
+  assert.equal((await reservePractice(user)).allowed, true);
 });
 
-test('a legacy session: answers take today’s allowance, stop at the limit, and never rewrite history', async () => {
+test('11. two tabs racing for the day: exactly one session is allowed', async () => {
   const user = await student();
-  const legacy = await unmetered(user, 20);
+  const results = await Promise.all(Array.from({ length: 5 }, () => reservePractice(user)));
+  assert.equal(results.filter((row) => row.allowed).length, 1, 'exactly one wins');
+});
+
+test('12. the next Lagos day restores the one session', async () => {
+  const user = await student();
+  await startSession(user);
+  assert.equal((await reservePractice(user)).allowed, false);
+  assert.equal((await reservePractice(user, NEXT_DAY)).allowed, true, 'tomorrow brings a new session');
+});
+
+test('12b. the day key the application computes is the Lagos day the database uses', async () => {
+  // 22:30Z on the 21st is already the 22nd in Lagos (UTC+1). The two must agree,
+  // or a student's allowance would refill an hour early or late.
+  const lagosDay = async (instant) =>
+    (await db.query(`select to_char(product_quota_day($1::timestamptz), 'YYYY-MM-DD') as day`, [instant])).rows[0].day;
+
+  assert.equal(await lagosDay('2026-09-21T23:30:00Z'), NEXT_DAY, '00:30 in Lagos is already tomorrow');
+  assert.equal(await lagosDay('2026-09-21T22:30:00Z'), DAY, '23:30 in Lagos is still today');
+});
+
+test('13. Master practice is unchanged: its own, much larger, daily allowance', async () => {
+  const user = await student();
+  const results = await Promise.all(Array.from({ length: 5 }, () => reservePractice(user, DAY, 200)));
+  assert.equal(results.filter((row) => row.allowed).length, 5, 'Master is nowhere near its limit');
+
+  const session = await unmetered(user, 40);
+  assert.equal((await questions(session)).length, 40, 'and keeps its 40-question papers');
+});
+
+test('14. a legacy session created under the old plan stays whole and resumable', async () => {
+  /*
+   * Compatibility rule. Papers frozen under the cancelled per-question plan may
+   * still carry `practice_question_usage` rows. Nothing reads them any more, so
+   * the session opens in full, every question stays answerable, and the stored
+   * result is never rewritten.
+   */
+  const user = await student();
+  const legacy = await metered(user, 4);
   const ids = await questions(legacy);
-  // One answered before the release (the unmetered path, no ledger row).
-  await db.query(`select save_response_v2($1,'practice',$2,$3,'A',false,0,$4)`, [user, legacy, ids[0], randomUUID()]);
-  const snapshotBefore = (await db.query('select student_snapshot, correct_option_key from practice_session_questions where session_id=$1 order by position', [legacy])).rows;
+  assert.equal(await ledgerRows(user), 4, 'the old ledger rows are still there');
 
-  // Re-submitting the pre-release answer costs nothing.
-  await answer(user, legacy, ids[0], { key: 'B' });
-  assert.equal((await allowance(user)).used, 0);
+  // The day's allowance is untouched by a session that predates it.
+  assert.equal(await practiceUsage(user), 0);
 
-  for (const q of ids.slice(1, 5)) await answer(user, legacy, q);
-  assert.equal((await allowance(user)).remaining, 0);
-  await assert.rejects(answer(user, legacy, ids[5]), LIMIT_ERROR, 'the 16 other questions are locked for today');
+  for (const id of ids) {
+    const rev = await revision(user, legacy, id);
+    const receipt = await db.query(`select save_response_v2($1,'practice',$2,$3,'A',false,$4,$5)`, [user, legacy, id, rev, randomUUID()]);
+    assert.ok(receipt.rows[0], 'every legacy question is still answerable');
+  }
 
-  const snapshotAfter = (await db.query('select student_snapshot, correct_option_key from practice_session_questions where session_id=$1 order by position', [legacy])).rows;
-  assert.deepEqual(snapshotAfter, snapshotBefore, 'the frozen paper is untouched');
-  assert.equal((await answer(user, legacy, ids[5], { day: NEXT_DAY })).allowance.used, 1, 'tomorrow unlocks the next one');
+  const completed = (await db.query('select * from complete_practice_session($1,$2)', [user, legacy])).rows[0];
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.answered_count, 4, 'the legacy result is intact');
+  assert.equal(await ledgerRows(user), 4, 'and its history was neither deleted nor rewritten');
 });
 
-test('a refused answer charges nothing: finished session, foreign session, expired timer', async () => {
-  const alice = await student();
-  const bob = await student();
-  const session = await metered(alice, 2);
-  const [q1, q2] = await questions(session);
-
-  await assert.rejects(answer(bob, session, q1), /SESSION_NOT_FOUND/, 'another student cannot spend or answer it');
-  assert.equal(await ledgerRows(bob), 0);
-
-  await db.query('select complete_practice_session($1,$2)', [alice, session]);
-  await assert.rejects(answer(alice, session, q2), /PRACTICE_SESSION_NOT_ACTIVE/);
-
-  const timed = await unmetered(alice, 1, { mode: 'timed' });
-  await db.query("update practice_sessions set expires_at = now() - interval '1 second' where id=$1", [timed]);
-  const before = await ledgerRows(alice);
-  await assert.rejects(answer(alice, timed, (await questions(timed))[0]), /PRACTICE_SESSION_TIME_UP/);
-  assert.equal(await ledgerRows(alice), before, 'the charge rolled back with the refused answer');
-});
-
-test('an expired timed session’s held questions are no longer waiting', async () => {
+test('14b. today’s session is still available to a student who is resuming a legacy paper', async () => {
   const user = await student();
-  const timed = await metered(user, 2, { mode: 'timed' });
-  await db.query("update practice_sessions set expires_at = now() - interval '1 second' where id=$1", [timed]);
-  assert.deepEqual(await allowance(user), { allowance: 4, used: 2, waiting: 0, remaining: 2, available: 2 });
+  await metered(user, 4);
+  assert.equal((await reservePractice(user)).allowed, true, 'an old session does not consume the new allowance');
 });
 
-test('metered functions refuse nonsense parameters', async () => {
+test('50. a student can never reach another student’s session or usage', async () => {
+  const [owner, intruder] = [await student(), await student()];
+  const { session } = await startSession(owner, { count: 2 });
+  const [question] = await questions(session);
+
+  await assert.rejects(
+    db.query(`select save_response_v2($1,'practice',$2,$3,'A',false,0,$4)`, [intruder, session, question, randomUUID()]),
+    'answering somebody else’s session is refused',
+  );
+  assert.equal(await practiceUsage(intruder), 0, 'and their allowance is their own');
+  assert.equal(await practiceUsage(owner), 1);
+});
+
+test('reserve_product_quota refuses nonsense parameters', async () => {
   const user = await student();
-  await assert.rejects(db.query('select * from practice_question_allowance($1,$2,$3)', [user, 'today', 4]), /PRODUCT_QUOTA_PARAMS_INVALID/);
-  await assert.rejects(db.query('select * from practice_question_allowance($1,$2,$3)', [user, DAY, 0]), /PRODUCT_QUOTA_PARAMS_INVALID/);
+  await assert.rejects(db.query('select * from reserve_product_quota($1,$2,$3,0,120)', [user, 'practice_session', DAY]));
+  await assert.rejects(db.query('select * from reserve_product_quota($1,$2,$3,1,120)', [user, 'free_lunch', DAY]));
 });
 
 // ───────────────────────────────────────────────────────────── FREE MOCK
@@ -582,7 +501,13 @@ const NEW_FUNCTIONS = [
   ['refund_ai_daily_quota', 'uuid,text'],
 ];
 
-test('58. every new function is out of reach of browser roles — a direct call cannot bypass the UI', async () => {
+/**
+ * The per-question functions are retained (a migration is forward-only and
+ * dropping them would break nothing but gain nothing) and unused. They must
+ * stay out of reach of the browser regardless: an unused SECURITY DEFINER
+ * function a student could call is still a way in.
+ */
+test('51/58. every quota function is out of reach of browser roles — a direct call cannot bypass the UI', async () => {
   for (const [name, args] of NEW_FUNCTIONS) {
     const { rows } = await db.query(`select
       has_function_privilege('authenticated', $1, 'execute') as auth,
@@ -639,10 +564,10 @@ test('the metered paths take the per-student ledger lock before touching anythin
 
 // ─────────────────────────────────────────────────────────── ENTITLEMENT
 
-test('38–40. a Paystack activation after a used-up Free day changes the plan, not the usage account', async () => {
+test('38–40/52. a Paystack activation after a used-up Free day changes the plan, not the usage account', async () => {
   const user = await student();
-  const session = await metered(user, 4);
-  for (const q of await questions(session)) await answer(user, session, q);
+  await startSession(user, { count: 20 });
+  assert.equal((await reservePractice(user)).allowed, false, 'today is spent on Free');
   const ledgerBefore = await ledgerRows(user);
   const anchorsBefore = (await db.query('select count(*)::int as total from product_usage_windows where user_id=$1', [user])).rows[0].total;
 
@@ -660,24 +585,28 @@ test('38–40. a Paystack activation after a used-up Free day changes the plan, 
     'no second usage account is created',
   );
 
-  // Master's practice is the unmetered path, so the exhausted Free day no longer applies.
-  const masterSession = await unmetered(user, 20);
-  assert.equal((await questions(masterSession)).length, 20);
+  // Master is counted against its own, much larger, daily limit, so the
+  // exhausted Free day stops applying on the very next request.
+  assert.equal((await reservePractice(user, DAY, 200)).allowed, true, 'Master practises at once');
+  const masterSession = await unmetered(user, 40);
+  assert.equal((await questions(masterSession)).length, 40);
 
-  // When Master lapses, the same Free ledger resumes where it was.
+  // When Master lapses, the same usage account resumes where it was.
   await db.query(`update user_entitlements set expires_at = now() - interval '1 second' where user_id=$1`, [user]);
   assert.equal((await db.query('select * from current_billing_entitlement($1)', [user])).rows[0].tier, 'free');
-  assert.equal((await allowance(user)).remaining, 0, 'expired Master resumes today’s Free usage');
+  assert.equal((await reservePractice(user)).allowed, false, 'expired Master resumes today’s Free usage');
 });
 
 test('the migration is safe to re-run and preserves usage history', async () => {
   const user = await student();
-  const session = await metered(user, 2);
-  await answer(user, session, (await questions(session))[0]);
-  const before = await allowance(user);
+  await startSession(user, { count: 2 });
+  const legacy = await metered(user, 2);
+  await answer(user, legacy, (await questions(legacy))[0]);
+  const legacyBefore = await allowance(user);
 
   await db.exec(readFileSync(MIGRATION, 'utf8'));
 
-  assert.deepEqual(await allowance(user), before);
+  assert.equal(await practiceUsage(user), 1, 'the session reservation survives');
+  assert.deepEqual(await allowance(user), legacyBefore, 'and so does the legacy ledger');
   assert.equal(await ledgerRows(user), 2);
 });

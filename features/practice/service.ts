@@ -2,16 +2,6 @@ import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
 import { getRevisions } from "@/features/offline/server";
 
-import {
-  isPracticeLimitError,
-  PracticeAllowanceExhausted,
-  readHeldPracticeQuestions,
-  readPracticeAllowance,
-  toPracticeAllowance,
-  type PracticeMeter,
-} from "@/features/billing/quota";
-import type { PracticeQuestionAllowance } from "@/features/billing/usage-types";
-import { lockBeyondAllowance } from "@/features/practice/allowance";
 import { toStudentQuestion } from "@/features/questions/delivery";
 import { fetchCanonicalQuestions, resolveQuestionProviderId } from "@/features/questions/service";
 import { readStudentSnapshot } from "@/features/questions/snapshot";
@@ -19,7 +9,6 @@ import {
   classifyDatabaseError,
   logSessionOpenFailure,
   SessionOpenError,
-  toSessionOpenError,
   type SessionOpenDiagnostic,
 } from "@/features/sessions/diagnostics";
 import type {
@@ -27,7 +16,6 @@ import type {
   CreatePracticeSessionInput,
   PracticeFeedback,
   PracticeMode,
-  PracticeSessionQuestionView,
   PracticeSessionView,
   SavePracticeAnswerResult,
 } from "@/features/practice/types";
@@ -124,16 +112,17 @@ async function resolvePracticeScope(userId: string, input: CreatePracticeSession
   };
 }
 
+/**
+ * Builds a practice session.
+ *
+ * The plan allowance is not consulted here. It is reserved by the route before
+ * this is called and committed only once a session genuinely exists, so a
+ * provider failure inside this function costs the student nothing. `input.count`
+ * has already been clamped to the plan's `maxQuestionsPerSession`.
+ */
 export async function createPracticeSessionForUser(
   userId: string,
   input: CreatePracticeSessionInput,
-  /**
-   * Present when the student's plan counts practice questions. The session is
-   * then built by `create_metered_practice_session`, which refuses — under the
-   * ledger lock — any paper larger than what is left, and holds every question
-   * it creates. Absent: the unchanged path.
-   */
-  meter: PracticeMeter | null = null,
 ): Promise<{ sessionId: string; questionCount: number; requestedCount: number }> {
   await assertOnboardedUser(userId);
   const scope = await resolvePracticeScope(userId, input);
@@ -184,20 +173,25 @@ export async function createPracticeSessionForUser(
     p_duration_seconds: durationSeconds,
     p_questions: toJson(payload),
   };
-  const { data, error } = meter
-    ? await admin.rpc("create_metered_practice_session", { ...args, p_day_key: meter.dayKey, p_limit: meter.limit })
-    : await admin.rpc("create_practice_session", args);
+  const { data, error } = await admin.rpc("create_practice_session", args);
 
-  if (error && meter && isPracticeLimitError(error.message)) throw new PracticeAllowanceExhausted(meter);
   if (error || !data) throw new Error(`Could not create practice session: ${error?.message ?? "unknown error"}`);
   return { sessionId: data, questionCount: questions.length, requestedCount: input.count };
 }
 
+/**
+ * Opens a session the student already owns.
+ *
+ * Never gated by the plan allowance, on any tier. A session that exists was paid
+ * for out of the allowance when it was created; withholding part of it later
+ * would mean a student could lose access to a paper mid-way through, and a
+ * legacy session created under an older plan would become unreadable. Resuming,
+ * refreshing and reviewing are free forever — that is the whole point of
+ * counting sessions at creation.
+ */
 export async function loadPracticeSessionForUser(
   userId: string,
   sessionId: string,
-  /** Present on a question-counted plan: unanswered questions beyond today's allowance are withheld. */
-  meter: PracticeMeter | null = null,
 ): Promise<PracticeSessionView | null> {
   const admin = createAdminClient();
   /*
@@ -333,33 +327,6 @@ export async function loadPracticeSessionForUser(
     console.info(`[session-open] legacySnapshot kind=practice session=${sessionId} questions=${storedQuestions.length}`);
   }
 
-  /*
-   * Delivery gate for question-counted plans. Only an answerable session is
-   * gated: a finished one is reviewed on the results page, which is never
-   * restricted. An unreadable allowance withholds every question the ledger
-   * does not already hold for this student — it fails closed on delivery, and
-   * the student's own answers are still shown.
-   */
-  let questions: PracticeSessionQuestionView[] = allQuestions;
-  let practiceAllowance: PracticeQuestionAllowance | null | undefined;
-  const answerable = typedSession.status === "in_progress"
-    && (!typedSession.expires_at || Date.parse(typedSession.expires_at) > Date.now());
-  if (meter) {
-    // The allowance decision is unchanged and still belongs to billing. Only the
-    // classification is added: a ledger read that fails is a distinct reason a
-    // session would not open, and it used to be indistinguishable from a broken
-    // snapshot in the logs.
-    try {
-      practiceAllowance = await readPracticeAllowance(userId, meter);
-      if (answerable) {
-        const held = new Set(await readHeldPracticeQuestions(userId, sessionId));
-        questions = lockBeyondAllowance(allQuestions, held, practiceAllowance?.available ?? 0);
-      }
-    } catch (error) {
-      throw toSessionOpenError(error, "practice", sessionId, "QUOTA_BLOCKED");
-    }
-  }
-
   return {
     id: typedSession.id,
     userId, serverNow: Date.now(),
@@ -388,8 +355,7 @@ export async function loadPracticeSessionForUser(
     startedAt: typedSession.started_at,
     expiresAt: typedSession.expires_at,
     completedAt: typedSession.completed_at,
-    questions,
-    ...(meter ? { practiceAllowance } : {}),
+    questions: allQuestions,
   };
 }
 
@@ -399,13 +365,6 @@ export async function savePracticeAnswerForUser(
   sessionQuestionId: string,
   selectedOptionKey: QuestionOption["key"],
   expectedRevision: number, mutationId: string,
-  /**
-   * Present on a question-counted plan. The answer is then saved by
-   * `save_metered_practice_response`, which charges a first answer and writes it
-   * in one transaction — a refused charge writes nothing, a refused answer
-   * charges nothing, and a retry of the same answer is never charged twice.
-   */
-  meter: PracticeMeter | null = null,
 ): Promise<SavePracticeAnswerResult> {
   const admin = createAdminClient();
   const args = {
@@ -416,16 +375,14 @@ export async function savePracticeAnswerForUser(
     p_expected_revision: expectedRevision,
     p_mutation_id: mutationId,
   };
-  const { data, error } = meter
-    ? await admin.rpc("save_metered_practice_response", { ...args, p_day_key: meter.dayKey, p_limit: meter.limit })
-    : await admin.rpc("save_response_v2", { ...args, p_kind: "practice", p_is_flagged: false });
+  // Answering is never metered: the session's existence is what the plan
+  // counted. A student always finishes what they started.
+  const { data, error } = await admin.rpc("save_response_v2", { ...args, p_kind: "practice", p_is_flagged: false });
 
-  if (error && meter && isPracticeLimitError(error.message)) throw new PracticeAllowanceExhausted(meter);
   if (error) throw new Error(error.message);
   const result = data as unknown as Database["public"]["Functions"]["save_practice_answer"]["Returns"][number] & {
     revision: number;
     mutation_id: string;
-    allowance?: Record<string, number>;
   };
   if (!result) throw new Error("The answer could not be saved.");
 
@@ -443,8 +400,6 @@ export async function savePracticeAnswerForUser(
       explanation: result.explanation,
     };
   }
-
-  if (meter && result.allowance) response.allowance = toPracticeAllowance(result.allowance);
 
   return response;
 }

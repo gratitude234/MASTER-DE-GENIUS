@@ -77,22 +77,34 @@ test('the published prices and durations are exactly what the catalogue holds', 
   );
 });
 
-test('the Free and Master limits are the published ones', () => {
-  // Free plan v2: 4 practice questions a day, 2 mocks a month, 2 new MASTER AI
-  // explanations a day — all account-wide.
+test('1/15/25. the Free and Master limits are the published ones', () => {
+  /*
+   * The published Free plan: 1 practice session a day of up to 20 questions,
+   * 2 full mocks a calendar month, 2 new MASTER AI explanations a day — all
+   * account-wide. If this test is edited, the product changed.
+   */
   assert.deepEqual(plans.TIER_LIMITS.free, {
-    practice: { unit: 'question', perDay: 4 },
+    practice: { sessionsPerDay: 1, maxQuestionsPerSession: 20 },
     mockAttempts: 2,
     mockAttemptWindow: 'month',
     aiExplanationsPerDay: 2,
   });
   // Master is exactly what it was before Free changed.
   assert.deepEqual(plans.TIER_LIMITS.master, {
-    practice: { unit: 'session', perDay: 200 },
+    practice: { sessionsPerDay: 200, maxQuestionsPerSession: 40 },
     mockAttempts: 3,
     mockAttemptWindow: 'day',
     aiExplanationsPerDay: 20,
   });
+  // The request-validation ceiling is derived, never typed twice.
+  assert.equal(plans.PRACTICE_MAX_QUESTIONS, 40);
+});
+
+test('no plan configuration still describes the cancelled per-question model', () => {
+  for (const limits of Object.values(plans.TIER_LIMITS)) {
+    assert.equal('unit' in limits.practice, false, 'practice is no longer counted in two different units');
+    assert.equal('perDay' in limits.practice, false, 'the old per-day question field is gone');
+  }
 });
 
 test('prices are rendered in naira, never in raw kobo', () => {
@@ -109,7 +121,7 @@ test('Free resolves for a student with no entitlement row at all', () => {
   assert.equal(entitlement.tier, 'free');
   assert.equal(entitlement.isMaster, false);
   assert.equal(entitlement.limits.aiExplanationsPerDay, 2);
-  assert.deepEqual(entitlement.limits.practice, { unit: 'question', perDay: 4 });
+  assert.deepEqual(entitlement.limits.practice, { sessionsPerDay: 1, maxQuestionsPerSession: 20 });
   assert.equal(entitlement.limits.mockAttempts, 2);
   assert.equal(entitlement.plan, null);
 });
@@ -122,7 +134,7 @@ test('an unexpired Master row resolves to active Master with its plan', () => {
   assert.equal(entitlement.isMaster, true);
   assert.equal(entitlement.plan?.slug, 'master_90');
   assert.equal(entitlement.limits.aiExplanationsPerDay, 20);
-  assert.deepEqual(entitlement.limits.practice, { unit: 'session', perDay: 200 });
+  assert.deepEqual(entitlement.limits.practice, { sessionsPerDay: 200, maxQuestionsPerSession: 40 });
   assert.equal(entitlement.limits.mockAttempts, 3);
   assert.equal(entitlement.limits.mockAttemptWindow, 'day');
 });
@@ -134,7 +146,7 @@ test('an expired Master row falls back to Free, keeping the date for the billing
   assert.equal(entitlement.tier, 'free');
   assert.equal(entitlement.isMaster, false);
   assert.equal(entitlement.limits.aiExplanationsPerDay, 2, 'lapsed Master resumes the Free policy');
-  assert.equal(entitlement.limits.practice.unit, 'question');
+  assert.equal(entitlement.limits.practice.sessionsPerDay, 1, 'and the Free practice allowance with it');
   assert.equal(entitlement.plan, null, 'a lapsed plan must not still be reported as the active plan');
   assert.equal(entitlement.expiresAt, expiresAt, 'the past expiry is preserved so it can be explained');
 });
@@ -1017,7 +1029,7 @@ test('the free AI limit message is student-facing, not a bare quota error', () =
 });
 
 test('the upgrade copy only promises limits this release actually raises', () => {
-  for (const capability of ['ai_explanation', 'practice_question', 'mock_attempt']) {
+  for (const capability of ['ai_explanation', 'practice_session', 'mock_attempt']) {
     const notice = planLimitNotice({
       capability,
       tier: 'free',
@@ -1038,7 +1050,7 @@ test('the upgrade copy only promises limits this release actually raises', () =>
 });
 
 test('every limit message names what ran out, when it resets and where to upgrade', () => {
-  for (const capability of ['practice_question', 'practice_session', 'mock_attempt', 'ai_explanation']) {
+  for (const capability of ['practice_session', 'mock_attempt', 'ai_explanation']) {
     const notice = planLimitNotice({
       capability,
       tier: 'free',
@@ -1202,8 +1214,8 @@ test('the current-plan card states the limits and the expiry it is holding', asy
   assert.ok(free.includes('Free'));
   assert.ok(free.includes('Upgrade to Master'));
   assert.ok(free.includes('href="/pricing?source=billing#plans"'));
-  assert.ok(free.includes('4 practice questions a day'), 'the Free allowance is described in questions');
-  assert.ok(!free.includes('practice sessions a day, 2'), 'the old session wording is gone for Free');
+  assert.ok(free.includes('1 practice session a day, up to 20 questions'), 'the Free allowance names the size too');
+  assert.ok(!/practice question/.test(free), 'the cancelled per-question wording is gone');
 
   const master = renderToStaticMarkup(React.createElement(CurrentPlanCard, {
     entitlement: {
@@ -1244,8 +1256,8 @@ test('the plan comparison never claims Free hides a score, an answer or an expla
   const gated = PLAN_COMPARISON.filter((row) => row.gated).map((row) => row.capability);
   assert.deepEqual(gated, ['Practice', 'Full mock attempts', 'New MASTER AI explanations']);
   const byCapability = Object.fromEntries(PLAN_COMPARISON.map((row) => [row.capability, row]));
-  assert.equal(byCapability.Practice.free, '4 practice questions a day');
-  assert.equal(byCapability.Practice.master, '200 practice sessions a day', 'Master is unchanged');
+  assert.equal(byCapability.Practice.free, '1 practice session a day, up to 20 questions');
+  assert.equal(byCapability.Practice.master, '200 practice sessions a day, up to 40 questions', 'Master is unchanged');
   assert.equal(byCapability['Full mock attempts'].free, '2 full mocks a month');
   assert.equal(byCapability['New MASTER AI explanations'].free, '2 MASTER AI explanations a day');
 

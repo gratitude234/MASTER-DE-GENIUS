@@ -9,24 +9,37 @@ registerAliasHook();
 registerTsxHook();
 
 /**
- * The three other routes that deliver or consume practice questions — the
- * answer endpoint, revision from results or the mistake bank, and the offline
- * copy — each resolve the plan per request and pass the same meter down.
+ * The three practice routes that are *not* session creation — the answer
+ * endpoint, revision from results or the mistake bank, and the offline copy.
  *
- * The real quota module runs here (the meter, the refusal type, the allowance
- * read); only the entitlement row, the service calls and the database client
- * are replaced.
+ * Under the session-counted plan, two of these must cost nothing at all and one
+ * of them (revision) must cost exactly the same day as Practice does, because
+ * it genuinely creates a new session. Getting that split wrong in either
+ * direction is the bug these tests exist to catch: charge for an answer and a
+ * student cannot finish what they started; give revision a free pass and the
+ * mistake bank becomes an unlimited second allowance.
+ *
+ * The real quota module runs here. Only the entitlement row, the service calls
+ * and the database client are replaced.
  */
 
 const stub = (source) => ({ url: 'data:text/javascript,' + encodeURIComponent(source), shortCircuit: true });
 const NEXT_SERVER_URL = new URL('../node_modules/next/server.js', import.meta.url).href;
 
-const FREE_LIMITS = { practice: { unit: 'question', perDay: 4 }, mockAttempts: 2, mockAttemptWindow: 'month', aiExplanationsPerDay: 2 };
-const MASTER_LIMITS = { practice: { unit: 'session', perDay: 200 }, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 };
+const FREE_LIMITS = { practice: { sessionsPerDay: 1, maxQuestionsPerSession: 20 }, mockAttempts: 2, mockAttemptWindow: 'month', aiExplanationsPerDay: 2 };
+const MASTER_LIMITS = { practice: { sessionsPerDay: 200, maxQuestionsPerSession: 40 }, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 };
 
 const world = {
   reset(overrides = {}) {
-    Object.assign(this, { tier: 'free', exhausted: false, meters: [], allowance: { allowance: 4, used: 4, waiting: 0, remaining: 0, available: 0 } }, overrides);
+    Object.assign(this, {
+      tier: 'free',
+      /** What `reserve_product_quota` answers. False = the day is already spent. */
+      reserveAllowed: true,
+      /** The session the student could resume, if any. */
+      activePractice: null,
+      revisionFails: false,
+      calls: { rpc: [], revisions: [], loads: [], answers: [] },
+    }, overrides);
   },
 };
 world.reset();
@@ -37,7 +50,16 @@ registerHooks({
     if (specifier === 'next/server') return { url: NEXT_SERVER_URL, shortCircuit: true };
     if (specifier === '@/lib/supabase/admin') {
       return stub(`export function createAdminClient(){ return {
-        rpc: async () => ({ data: [globalThis.__routes.allowance], error: null }),
+        rpc: async (name, args) => {
+          const w = globalThis.__routes;
+          w.calls.rpc.push({ name, args });
+          if (name === 'reserve_product_quota') {
+            return { data: [{ allowed: w.reserveAllowed, used: w.reserveAllowed ? 1 : args.p_limit,
+              remaining: w.reserveAllowed ? args.p_limit - 1 : 0,
+              reservation_id: w.reserveAllowed ? 'reservation-1' : null }], error: null };
+          }
+          return { data: true, error: null };
+        },
         from: () => { throw new Error('unexpected table read'); },
       }; }`);
     }
@@ -47,6 +69,9 @@ registerHooks({
         return { tier: w.tier, isMaster: w.tier === 'master', plan: null, expiresAt: null,
           limits: w.tier === 'master' ? ${JSON.stringify(MASTER_LIMITS)} : ${JSON.stringify(FREE_LIMITS)} };
       }`);
+    }
+    if (specifier === '@/features/practice/active-session') {
+      return stub(`export async function getActivePracticeSessionForUser(){ return globalThis.__routes.activePractice; }`);
     }
     if (specifier === '@/features/practice/api') {
       return stub(`import { NextResponse } from 'next/server';
@@ -59,20 +84,21 @@ registerHooks({
         export function examErrorResponse(error){ return NextResponse.json({ error: String(error) }, { status: 503 }); }`);
     }
     if (specifier === '@/features/practice/service') {
-      return stub(`import { PracticeAllowanceExhausted } from '@/features/billing/quota';
-        export async function savePracticeAnswerForUser(u, s, q, key, rev, mutation, meter){
-          const w = globalThis.__routes; w.meters.push(meter);
-          if (meter && w.exhausted) throw new PracticeAllowanceExhausted(meter);
-          return { revision: rev + 1, mutationId: mutation, selectedOptionKey: key, answeredCount: 1, questionCount: 4 };
+      return stub(`export async function savePracticeAnswerForUser(u, s, q, key, rev, mutation){
+          globalThis.__routes.calls.answers.push({ q, key, rev, mutation, args: arguments.length });
+          return { revision: rev + 1, mutationId: mutation, selectedOptionKey: key, answeredCount: 1, questionCount: 20 };
         }
-        export async function loadPracticeSessionForUser(u, s, meter){ globalThis.__routes.meters.push(meter); return { id: s, questions: [] }; }`);
+        export async function loadPracticeSessionForUser(){
+          globalThis.__routes.calls.loads.push(arguments.length);
+          return { id: 's1', questions: [] };
+        }`);
     }
     if (specifier === '@/features/exams/service') return stub('export async function loadExamAttemptForUser(){ return { id: "a" }; }');
     if (specifier === '@/features/results/service') {
-      return stub(`import { PracticeAllowanceExhausted } from '@/features/billing/quota';
-        export async function startRevision(u, input, meter){
-          const w = globalThis.__routes; w.meters.push(meter);
-          if (meter && w.exhausted) throw new PracticeAllowanceExhausted(meter);
+      return stub(`export async function startRevision(u, input, maxQuestions){
+          const w = globalThis.__routes;
+          w.calls.revisions.push({ input, maxQuestions });
+          if (w.revisionFails) throw new Error('No active mistakes match this subject and topic.');
           return 'revision-session';
         }`);
     }
@@ -100,55 +126,105 @@ const revisionRequest = () => new Request('https://app.invalid/api/progress/prac
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ subjectSlug: 'physics', mistakes: true }),
 });
-
-test('a Free answer is saved through the practice-question meter', async () => {
-  world.reset();
-  const response = await saveAnswer(answerRequest(), params);
-  assert.equal(response.status, 200);
-  assert.equal(world.meters[0].limit, 4);
-  assert.match(world.meters[0].dayKey, /^\d{4}-\d{2}-\d{2}$/);
+const offlineRequest = () => offlineSession(new Request('https://app.invalid'), {
+  params: Promise.resolve({ kind: 'practice', id: 's1' }),
 });
 
-test('58. an answer beyond the allowance is refused by the server — whatever the UI showed', async () => {
-  world.reset({ exhausted: true });
-  const response = await saveAnswer(answerRequest(), params);
+// ─────────────────────────────────────────────────────────── answering
+
+test('9. answering costs nothing — no reservation is taken, on either tier', async () => {
+  for (const tier of ['free', 'master']) {
+    world.reset({ tier });
+    const response = await saveAnswer(answerRequest(), params);
+
+    assert.equal(response.status, 200, tier + ' must be able to answer');
+    assert.deepEqual(
+      world.calls.rpc.filter((call) => call.name === 'reserve_product_quota'),
+      [],
+      tier + ': an answer reserves nothing',
+    );
+    assert.equal(world.calls.answers[0].args, 6, 'no meter is passed down');
+  }
+});
+
+test('9b. a Free student who has used the day can still answer the session they are in', async () => {
+  // The allowance is not even consulted on this path, which is the point: a
+  // session in progress is unaffected by the day being spent.
+  world.reset({ reserveAllowed: false });
+  assert.equal((await saveAnswer(answerRequest(), params)).status, 200);
+});
+
+// ────────────────────────────────────────────────────────── revision
+
+test('revision creates a real session, so it takes the same day Practice does', async () => {
+  world.reset();
+  const response = await startRevision(revisionRequest());
+
+  assert.equal(response.status, 201);
+  const rpcNames = world.calls.rpc.map((call) => call.name);
+  assert.ok(rpcNames.includes('reserve_product_quota'), 'the day is reserved');
+  assert.ok(rpcNames.includes('commit_product_quota'), 'and spent, because a session now exists');
+  const reserve = world.calls.rpc.find((call) => call.name === 'reserve_product_quota');
+  assert.equal(reserve.args.p_capability, 'practice_session', 'the same capability as Practice — one allowance');
+  assert.equal(reserve.args.p_limit, 1);
+  assert.equal(world.calls.revisions[0].maxQuestions, 20, 'sized by the plan, not by the request');
+});
+
+test('51. revision is refused once the day is spent — the mistake bank is not a second allowance', async () => {
+  world.reset({ reserveAllowed: false });
+  const response = await startRevision(revisionRequest());
   const body = await response.json();
 
   assert.equal(response.status, 402);
-  assert.equal(body.code, 'PLAN_LIMIT');
-  assert.equal(body.limit.capability, 'practice_question');
-  assert.equal(body.limit.message, 'You’ve used today’s 4 free practice questions.');
-  assert.deepEqual(body.allowance, { limit: 4, used: 4, waiting: 0, remaining: 0, available: 0 }, 'the counts come back with the refusal');
+  assert.equal(body.limit.capability, 'practice_session');
+  assert.equal(body.limit.upgradeHref, '/pricing?source=practice_exhausted#plans');
+  assert.deepEqual(world.calls.revisions, [], 'no revision session is built');
 });
 
-test('39. an exhausted Free student who upgrades answers on Master limits at the very next request', async () => {
-  world.reset({ exhausted: true });
-  assert.equal((await saveAnswer(answerRequest(), params)).status, 402);
+test('revision names the session to resume when one is open', async () => {
+  world.reset({
+    reserveAllowed: false,
+    activePractice: { id: 'session-7', subjectName: 'Physics', answeredCount: 0, questionCount: 20 },
+  });
+  const body = await (await startRevision(revisionRequest())).json();
 
-  // Paystack activates Master: the entitlement row changes, nothing else.
-  world.tier = 'master';
-  const response = await saveAnswer(answerRequest(), params);
-  assert.equal(response.status, 200, 'no sign-out, no new day');
-  assert.equal(world.meters.at(-1), null, 'the Master answer path is unmetered');
+  assert.equal(body.limit.message, 'Today’s practice session is already in progress.');
+  assert.equal(body.limit.resumeSessionId, 'session-7');
 });
 
-test('revision from the mistake bank draws on the same allowance, and is refused at zero', async () => {
-  world.reset({ exhausted: true });
-  const refused = await startRevision(revisionRequest());
-  assert.equal(refused.status, 402);
-  assert.equal((await refused.json()).limit.upgradeHref, '/pricing?source=practice_exhausted#plans');
+test('10. a revision that builds nothing hands the day straight back', async () => {
+  world.reset({ revisionFails: true });
+  const response = await startRevision(revisionRequest());
 
-  world.reset({ tier: 'master', exhausted: true });
-  assert.equal((await startRevision(revisionRequest())).status, 201, 'Master revision is unchanged');
-  assert.equal(world.meters[0], null);
+  assert.equal(response.status, 400);
+  assert.ok(
+    world.calls.rpc.some((call) => call.name === 'release_product_quota'),
+    'a revision with no matching mistakes must not cost a day',
+  );
+  assert.ok(!world.calls.rpc.some((call) => call.name === 'commit_product_quota'));
 });
 
-test('the offline copy of a Free session is gated by the same meter as the session page', async () => {
-  world.reset();
-  await offlineSession(new Request('https://app.invalid'), { params: Promise.resolve({ kind: 'practice', id: 's1' }) });
-  assert.equal(world.meters[0].limit, 4);
-
+test('13/24. Master revision is sized by Master limits and is not stopped at one a day', async () => {
   world.reset({ tier: 'master' });
-  await offlineSession(new Request('https://app.invalid'), { params: Promise.resolve({ kind: 'practice', id: 's1' }) });
-  assert.equal(world.meters[0], null);
+  assert.equal((await startRevision(revisionRequest())).status, 201);
+  const reserve = world.calls.rpc.find((call) => call.name === 'reserve_product_quota');
+  assert.equal(reserve.args.p_limit, 200, 'Master keeps its own allowance');
+  assert.equal(world.calls.revisions[0].maxQuestions, 40);
+});
+
+// ─────────────────────────────────────────────────────── offline copy
+
+test('60. the offline copy is never gated — a saved session stays complete', async () => {
+  for (const tier of ['free', 'master']) {
+    world.reset({ tier, reserveAllowed: false });
+    const response = await offlineRequest();
+
+    assert.equal(response.status, 200, tier + ': a saved session still loads');
+    assert.equal(world.calls.loads[0], 2, 'userId and id only — no meter, nothing withheld');
+    assert.deepEqual(
+      world.calls.rpc.filter((call) => call.name === 'reserve_product_quota'),
+      [],
+      tier + ': reading a saved session reserves nothing',
+    );
+  }
 });

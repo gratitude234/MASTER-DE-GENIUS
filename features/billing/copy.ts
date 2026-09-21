@@ -3,8 +3,9 @@
  *
  * The routes return these in their 402 bodies and the components render them
  * from server-supplied counts, so a limit can never be described two different
- * ways — and no component carries its own "4" or "2". The numbers always come
- * in as arguments, from the plan configuration or the server's usage summary.
+ * ways — and no component carries its own "1", "20" or "2". The numbers always
+ * come in as arguments, from the plan configuration or the server's usage
+ * summary.
  *
  * Plain student language only: no "quota", "ledger", "reservation" or
  * "entitlement". Shared by server and client.
@@ -31,10 +32,22 @@ export function remainingLine(
   return `${remaining} of ${of} remaining ${window === "month" ? "this month" : "today"}`;
 }
 
-/** "3 of 4 practice questions remaining today" */
-export function practiceRemainingLine(remaining: number, limit: number): string {
-  return remainingLine(remaining, limit, "practice question", "day");
+/**
+ * What Practice offers right now, in the student's words.
+ *
+ * "1 practice session available today", not "1 of 1 quota remaining". A student
+ * with one session a day is told what they can do, not what is left of a
+ * counter — and a student on a plan with several is told how many.
+ */
+export function practiceAvailableLine(remaining: number): string {
+  return `${countNoun(remaining, "practice session")} available today`;
 }
+
+/** The compact dashboard row when the day's session is already running. */
+export const PRACTICE_SESSION_IN_PROGRESS_SHORT = "Session in progress" as const;
+
+/** The compact dashboard row once the day's session has been used and finished. */
+export const PRACTICE_SESSION_USED_SHORT = "Today’s session used" as const;
 
 /** "1 of 2 free mocks remaining this month" */
 export function mockRemainingLine(remaining: number, limit: number, window: "day" | "month" = "month"): string {
@@ -55,12 +68,25 @@ export interface AllowanceMessage {
   upgrade: string;
 }
 
-export const PRACTICE_ONE_REMAINING = "You have 1 free practice question remaining today.";
+/**
+ * Today's session exists and has not been finished.
+ *
+ * This is not a refusal the student should read as a loss: the session is
+ * theirs, it is waiting, and finishing it costs nothing. Resume is the action;
+ * Master is the offer beside it, never instead of it.
+ */
+export const PRACTICE_SESSION_IN_PROGRESS: AllowanceMessage = {
+  message: "Today’s practice session is already in progress.",
+  upgrade: "Upgrade to Master to start more practice sessions today.",
+};
 
+/** Today's session was created and there is nothing left to resume. */
 export function practiceExhausted(limit: number): AllowanceMessage {
   return {
-    message: `You’ve used today’s ${countNoun(limit, "free practice question")}.`,
-    upgrade: "Upgrade to Master to keep practising today.",
+    message: limit === 1
+      ? "You’ve used today’s free practice session."
+      : `You’ve used today’s ${countNoun(limit, "free practice session")}.`,
+    upgrade: "Upgrade to Master to start more practice sessions today.",
   };
 }
 
@@ -92,9 +118,12 @@ export const RESULTS_UPGRADE: AllowanceMessage = {
 
 // ───────────────────────────────────────────────── plan descriptions
 
-/** "4 practice questions a day" / "200 practice sessions a day". */
-export function practiceAllowanceLabel(practice: { unit: "question" | "session"; perDay: number }): string {
-  return `${countNoun(practice.perDay, practice.unit === "question" ? "practice question" : "practice session")} a day`;
+/**
+ * "1 practice session a day, up to 20 questions" / "200 practice sessions a day,
+ * up to 40 questions". The size is part of the offer, so it is part of the line.
+ */
+export function practiceAllowanceLabel(practice: { sessionsPerDay: number; maxQuestionsPerSession: number }): string {
+  return `${countNoun(practice.sessionsPerDay, "practice session")} a day, up to ${countNoun(practice.maxQuestionsPerSession, "question")}`;
 }
 
 /** "2 full mocks a month" / "3 full mocks a day". */
@@ -109,7 +138,7 @@ export function aiAllowanceLabel(perDay: number): string {
 
 /** One line describing a whole plan's allowance, from the plan configuration. */
 export function planAllowanceSummary(limits: {
-  practice: { unit: "question" | "session"; perDay: number };
+  practice: { sessionsPerDay: number; maxQuestionsPerSession: number };
   mockAttempts: number;
   mockAttemptWindow: "day" | "month";
   aiExplanationsPerDay: number;

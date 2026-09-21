@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { getEntitlement } from "@/features/billing/entitlements";
-import { practiceMeterFor } from "@/features/billing/quota";
 import { requireExamApiUser } from "@/features/exams/api";
 import { loadExamAttemptForUser } from "@/features/exams/service";
 import { loadPracticeSessionForUser } from "@/features/practice/service";
@@ -10,11 +8,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ kin
   const { kind, id } = await params;
   if (kind !== "exam" && kind !== "practice") return NextResponse.json({ error: "Not found." }, { status: 404 });
   try {
-    // The offline copy is a delivery path like any other: a free student's
-    // practice view is gated by the same allowance as the session page.
+    // The offline copy is the same session the page shows. Nothing is withheld
+    // from it: the allowance was spent when the session was created, so a saved
+    // session stays complete and answerable without a network round trip.
     const view = kind === "exam"
       ? await loadExamAttemptForUser(user.id, id)
-      : await loadPracticeSessionForUser(user.id, id, practiceMeterFor(await getEntitlement(user.id)));
+      : await loadPracticeSessionForUser(user.id, id);
     if (!view) return NextResponse.json({ error: "Not found." }, { status: 404 });
     return NextResponse.json({ view }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return NextResponse.json({ error: "Could not load saved session." }, { status: 503 }); }

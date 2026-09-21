@@ -24,8 +24,8 @@ const stub = (source) => ({ url: 'data:text/javascript,' + encodeURIComponent(so
 
 const NEXT_SERVER_URL = new URL('../node_modules/next/server.js', import.meta.url).href;
 
-const FREE_LIMITS = { practice: { unit: 'question', perDay: 4 }, mockAttempts: 2, mockAttemptWindow: 'month', aiExplanationsPerDay: 2 };
-const MASTER_LIMITS = { practice: { unit: 'session', perDay: 200 }, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 };
+const FREE_LIMITS = { practice: { sessionsPerDay: 1, maxQuestionsPerSession: 20 }, mockAttempts: 2, mockAttemptWindow: 'month', aiExplanationsPerDay: 2 };
+const MASTER_LIMITS = { practice: { sessionsPerDay: 200, maxQuestionsPerSession: 40 }, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 };
 
 /** Everything the routes reach for, recorded rather than performed. */
 const world = {
@@ -39,13 +39,14 @@ const world = {
       unauthenticated: false,
       providerFails: false,
       mockResumed: false,
-      // The free practice ledger, as `practice_question_allowance` would report it.
-      allowance: { limit: 4, used: 0, waiting: 0, remaining: 4, available: 4 },
-      allowanceUnreadable: false,
-      // Set when the metered create loses a race under the ledger lock.
-      meteredCreateRefused: false,
+      /*
+       * The practice session the student has open, account-wide. Null means
+       * there is nothing to resume — which is what turns "already in progress"
+       * into "today's session has been used".
+       */
+      activePractice: null,
       activeAttempt: null,
-      calls: { reserved: [], committed: [], released: [], created: [], createdInputs: [], meters: [] },
+      calls: { reserved: [], committed: [], released: [], created: [], createdInputs: [] },
     }, overrides);
   },
 };
@@ -84,21 +85,9 @@ registerHooks({
         }
         export function capabilityLimit(capability, limits) {
           return capability === 'practice_session'
-            ? { limit: limits.practice.perDay, windowKind: 'day' }
+            ? { limit: limits.practice.sessionsPerDay, windowKind: 'day' }
             : { limit: limits.mockAttempts, windowKind: limits.mockAttemptWindow };
         }
-        export function practiceMeterFor(entitlement) {
-          if (entitlement.limits.practice.unit !== 'question') return null;
-          return { dayKey: '2026-09-21', limit: entitlement.limits.practice.perDay, resetAt: new Date(Date.now() + 3600_000), tier: entitlement.tier };
-        }
-        export async function readPracticeAllowance() {
-          const world = w();
-          return world.allowanceUnreadable ? null : { ...world.allowance };
-        }
-        export class PracticeAllowanceExhausted extends Error {
-          constructor(meter) { super('FREE_PRACTICE_LIMIT'); this.meter = meter; }
-        }
-        export function isPracticeLimitError(error) { return String(error?.message ?? error).includes('FREE_PRACTICE_LIMIT'); }
         export async function reserveCapability(userId, capability) {
           const world = w();
           const { limit, windowKind } = capabilityLimit(capability, world.limits);
@@ -164,14 +153,11 @@ registerHooks({
 
     if (specifier === '@/features/practice/service') {
       return stub(`
-        import { PracticeAllowanceExhausted } from '@/features/billing/quota';
-        export async function createPracticeSessionForUser(userId, input, meter = null) {
+        export async function createPracticeSessionForUser(userId, input) {
           const world = globalThis.__world;
           if (world.providerFails) throw new Error('The question provider is unavailable.');
-          if (meter && world.meteredCreateRefused) throw new PracticeAllowanceExhausted(meter);
           world.calls.created.push('practice');
           world.calls.createdInputs.push(input);
-          world.calls.meters.push(meter);
           return { sessionId: 'session-1', questionCount: input.count, requestedCount: input.count };
         }
       `);
@@ -191,12 +177,24 @@ registerHooks({
       `);
     }
 
+    if (specifier === '@/features/practice/active-session') {
+      return stub(`
+        export async function getActivePracticeSessionForUser() {
+          return globalThis.__world.activePractice;
+        }
+      `);
+    }
+
     if (specifier === '@/features/practice/validation') {
       return stub(`
         export function parseCreatePracticeSessionInput(value) {
+          const count = value?.count ?? 10;
+          if (!Number.isInteger(count) || count < 1 || count > 40) {
+            throw new Error('Practice sessions can contain between 1 and 40 questions.');
+          }
           return {
             subjectSlug: value?.subjectSlug ?? 'mathematics',
-            topicSlug: null, count: value?.count ?? 10,
+            topicSlug: null, count,
             mode: 'practice', difficulty: null, year: null,
           };
         }
@@ -210,10 +208,10 @@ registerHooks({
 const { POST: createPractice } = await import('../app/api/practice/sessions/route.ts');
 const { POST: createMock } = await import('../app/api/exam/attempts/route.ts');
 
-const practiceRequest = () => new Request('https://app.invalid/api/practice/sessions', {
+const practiceRequest = (body = {}) => new Request('https://app.invalid/api/practice/sessions', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ subjectSlug: 'mathematics', count: 10 }),
+  body: JSON.stringify({ subjectSlug: 'mathematics', count: 10, ...body }),
 });
 
 // ───────────────────────────────────────────────── practice session quota
@@ -229,7 +227,7 @@ test('a Master student within their allowance starts a session and spends one sl
   assert.deepEqual(world.calls.reserved, ['practice_session']);
   assert.deepEqual(world.calls.committed, ['reservation-1'], 'the allowance is spent only once a session exists');
   assert.deepEqual(world.calls.released, []);
-  assert.deepEqual(world.calls.meters, [null], 'Master answers and sessions are never question-metered');
+  assert.equal(world.calls.createdInputs[0].count, 10, 'Master is given exactly what it asked for');
 });
 
 test('a Master student gets the larger practice allowance from the same mechanism', async () => {
@@ -261,83 +259,110 @@ test('a suppressed duplicate submit returns the first session without spending t
   assert.deepEqual(world.calls.committed, []);
 });
 
-// ───────────────────────────────────── Free: practice counted in questions
+// ──────────────────────────── Free: one new practice session a day, up to 20
 
-test('a new Free student starts a session sized to their allowance, through the metered path', async () => {
+/**
+ * The Free plan allows **one new practice session a day**, account-wide, of up
+ * to 20 questions. These assert the server, not the screen: what the route
+ * reserves, when it commits, what it hands back, and what it refuses.
+ */
+
+test('1-3. a Free student starts the day able to build one 20-question session', async () => {
   world.reset();
-  const response = await createPractice(practiceRequest());
+  const response = await createPractice(practiceRequest({ count: 20 }));
   const body = await response.json();
 
   assert.equal(response.status, 201);
-  assert.deepEqual(world.calls.reserved, [], 'Free no longer spends a session slot');
-  assert.equal(world.calls.createdInputs[0].count, 4, 'asked for 10, built no more than the 4 left');
-  assert.equal(body.questionCount, 4);
-  assert.equal(world.calls.meters[0].limit, 4);
-  assert.equal(world.calls.meters[0].tier, 'free');
+  assert.deepEqual(world.calls.reserved, ['practice_session'], 'the day is reserved before any question is fetched');
+  assert.deepEqual(world.calls.committed, ['reservation-1'], 'and spent only once a session exists');
+  assert.equal(world.calls.createdInputs[0].count, 20, 'a Free session may be the full 20');
+  assert.equal(body.questionCount, 20);
 });
 
-test('a Free session is never larger than what is left — 2 left means at most 2', async () => {
-  world.reset({ allowance: { limit: 4, used: 2, waiting: 0, remaining: 2, available: 2 } });
-  await createPractice(practiceRequest());
-  assert.equal(world.calls.createdInputs[0].count, 2);
+test('4. a Free request for more than 20 builds 20 — the server clamps, it does not trust', async () => {
+  world.reset();
+  await createPractice(practiceRequest({ count: 40 }));
+  assert.equal(world.calls.createdInputs[0].count, 20, 'a crafted 40 yields the 20 the plan allows');
 });
 
-test('a manipulated count is clamped, never trusted', async () => {
-  world.reset({ allowance: { limit: 4, used: 3, waiting: 0, remaining: 1, available: 1 } });
-  const request = new Request('https://app.invalid/api/practice/sessions', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ subjectSlug: 'mathematics', count: 40 }),
-  });
-  await createPractice(request);
-  assert.equal(world.calls.createdInputs[0].count, 1, 'a 40-question request yields one question');
+test('4b. Master is not clamped to the Free ceiling', async () => {
+  world.reset(MASTER);
+  await createPractice(practiceRequest({ count: 40 }));
+  assert.equal(world.calls.createdInputs[0].count, 40, 'Master keeps the 40 it has always had');
 });
 
-test('a Free student with nothing left is refused before any question is fetched', async () => {
-  world.reset({ allowance: { limit: 4, used: 4, waiting: 0, remaining: 0, available: 0 } });
+test('5. a second new session the same day is refused, with the exact copy', async () => {
+  world.reset({ reserveAllowed: false });
   const response = await createPractice(practiceRequest());
   const body = await response.json();
 
   assert.equal(response.status, 402, 'a plan boundary is 402, distinct from a 429 "slow down"');
   assert.equal(body.code, 'PLAN_LIMIT');
-  assert.equal(body.limit.capability, 'practice_question');
+  assert.equal(body.limit.capability, 'practice_session');
   assert.equal(body.limit.tier, 'free');
-  assert.equal(body.limit.limit, 4);
-  assert.equal(body.limit.message, 'You’ve used today’s 4 free practice questions.');
-  assert.equal(body.limit.upgradeMessage, 'Upgrade to Master to keep practising today.');
+  assert.equal(body.limit.limit, 1);
+  assert.equal(body.limit.message, 'You’ve used today’s free practice session.');
+  assert.equal(body.limit.upgradeMessage, 'Upgrade to Master to start more practice sessions today.');
   assert.equal(body.limit.upgradeHref, '/pricing?source=practice_exhausted#plans');
-  assert.ok(!/quota/i.test(body.error), 'the student never sees internal wording');
+  assert.ok(!/quota|limit exceeded/i.test(body.error), 'the student never sees internal wording');
   assert.deepEqual(world.calls.created, [], 'nothing is built and no provider is contacted');
 });
 
-test('questions waiting in an unfinished session are described as waiting, not as used', async () => {
-  world.reset({ allowance: { limit: 4, used: 1, waiting: 3, remaining: 3, available: 0 } });
-  const response = await createPractice(practiceRequest());
-  const body = await response.json();
-
-  assert.equal(response.status, 409);
-  assert.equal(body.code, 'PRACTICE_QUESTIONS_WAITING');
-  assert.ok(!/used today/i.test(body.error));
-  assert.deepEqual(world.calls.created, []);
+test('6-7. a different subject, and a different exam body, share the one allowance', async () => {
+  // The route reserves before it ever looks at the subject, so a second subject
+  // reaches exactly the same refusal. Same for JAMB and WAEC: one account, one day.
+  for (const body of [{ subjectSlug: 'biology' }, { subjectSlug: 'biology', examBody: 'waec' }]) {
+    world.reset({ reserveAllowed: false });
+    const response = await createPractice(practiceRequest(body));
+    assert.equal(response.status, 402, JSON.stringify(body) + ' must not get an allowance of its own');
+    assert.deepEqual(world.calls.created, []);
+  }
 });
 
-test('losing the race for the last questions under the ledger lock is a clean 402', async () => {
-  world.reset({ meteredCreateRefused: true, allowance: { limit: 4, used: 3, waiting: 0, remaining: 1, available: 1 } });
+test('8. a session already in progress is a redirect, not a dead end', async () => {
+  world.reset({
+    reserveAllowed: false,
+    activePractice: { id: 'session-9', subjectName: 'Biology', answeredCount: 3, questionCount: 20 },
+  });
   const response = await createPractice(practiceRequest());
   const body = await response.json();
 
   assert.equal(response.status, 402);
-  assert.equal(body.limit.capability, 'practice_question');
-  assert.deepEqual(world.calls.created, [], 'the losing request created and held nothing');
+  assert.equal(body.limit.message, 'Today’s practice session is already in progress.');
+  assert.equal(body.limit.resumeSessionId, 'session-9', 'the browser can offer Resume without a second request');
+  assert.equal(body.limit.upgradeSource, 'practice_session_in_progress');
+  assert.equal(body.limit.upgradeHref, '/pricing?source=practice_session_in_progress#plans');
+  assert.equal(body.activeSession.id, 'session-9');
+  assert.ok(!/used today|have been used/i.test(body.limit.message), 'nothing has been lost, so nothing says it has');
 });
 
-test('an unreadable ledger fails closed as an outage, not as a used-up allowance', async () => {
-  world.reset({ allowanceUnreadable: true });
+test('10. a failed creation hands the day straight back', async () => {
+  world.reset({ providerFails: true });
   const response = await createPractice(practiceRequest());
-  const body = await response.json();
 
   assert.equal(response.status, 503);
-  assert.ok(!/used today/i.test(body.error), 'a student is never told they spent questions they did not');
-  assert.deepEqual(world.calls.created, []);
+  assert.deepEqual(world.calls.released, ['reservation-1'], 'a provider outage must not cost a day');
+  assert.deepEqual(world.calls.committed, [], 'nothing was created, so nothing is spent');
+});
+
+test('11. two tabs racing for the day: exactly one session, exactly one refusal', async () => {
+  /*
+   * The lock itself lives in reserve_product_quota, which takes the student's
+   * window row before it counts — proven against real SQL in
+   * tests/free-plan-quota-database.test.mjs. What is asserted here is that the
+   * route has no path around it: the loser never reaches the provider and never
+   * creates anything.
+   */
+  world.reset();
+  const responses = [];
+  for (const attempt of [0, 1]) {
+    world.reserveAllowed = attempt === 0;
+    responses.push(await createPractice(practiceRequest()));
+  }
+
+  assert.deepEqual(responses.map((response) => response.status), [201, 402]);
+  assert.deepEqual(world.calls.created, ['practice'], 'exactly one session is built');
+  assert.deepEqual(world.calls.committed, ['reservation-1'], 'exactly one day is spent');
 });
 
 test('a Free duplicate submit returns the first session and builds nothing more', async () => {

@@ -1,11 +1,6 @@
 import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
-import {
-  isPracticeLimitError,
-  PracticeAllowanceExhausted,
-  readPracticeAllowance,
-  type PracticeMeter,
-} from "@/features/billing/quota";
+
 import { readStudentSnapshot } from "@/features/questions/snapshot";
 import { logSessionOpenFailure, type SessionKind } from "@/features/sessions/diagnostics";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -140,6 +135,12 @@ export async function loadHistory(userId: string): Promise<LearningResult[]> {
   return results.sort((a, b) => b.completedAt.localeCompare(a.completedAt) || a.id.localeCompare(b.id));
 }
 
+/**
+ * A revision set is a focused re-attempt, not a full paper: 20 is the most it
+ * has ever built, and more would stop being revision.
+ */
+export const REVISION_QUESTION_CAP = 20;
+
 export interface RevisionInput {
   examBody?: string;
   resultId?: string;
@@ -148,17 +149,24 @@ export interface RevisionInput {
   topicSlug?: string;
   mistakes?: boolean;
 }
+/**
+ * Practising from a result or the mistake bank.
+ *
+ * This creates a genuinely new practice session, so it spends the day's
+ * practice allowance exactly as Practice and Past Questions do — the route
+ * reserves it before calling this. *Reading* a result or the mistake bank never
+ * does, and must not: review is free on every plan.
+ *
+ * `maxQuestions` is the caller's plan ceiling. Revision was already capped at
+ * 20 questions, so Free's cap changes nothing for it today; passing the plan's
+ * number keeps the two from drifting apart if either moves.
+ */
 export async function startRevision(
   userId: string,
   input: RevisionInput,
-  /**
-   * Present on a question-counted plan. A revision session is a new attempt at
-   * each question, so it is sized to what is left and holds its questions like
-   * any other practice session. Viewing results and the mistake bank is never
-   * metered — only practising from them.
-   */
-  meter: PracticeMeter | null = null,
+  maxQuestions = REVISION_QUESTION_CAP,
 ): Promise<string> {
+  const cap = Math.max(1, Math.min(maxQuestions, REVISION_QUESTION_CAP));
   let items: ReviewItem[];
   let examBodyId: string;
   if (input.mistakes) {
@@ -168,7 +176,7 @@ export async function startRevision(
       && (!input.topicSlug || m.item.question.topic?.slug === input.topicSlug));
     if (!bank.length) throw new Error("No active mistakes match this subject and topic.");
     examBodyId = bank[0].examBodyId;
-    items = bank.filter(m => m.examBodyId === examBodyId).slice(0, 20).map(m => m.item);
+    items = bank.filter(m => m.examBodyId === examBodyId).slice(0, cap).map(m => m.item);
   } else {
     if (!input.resultId || !input.kind) throw new Error("Choose a result to practise from.");
     const result = await loadResult(userId, input.kind, input.resultId);
@@ -176,15 +184,9 @@ export async function startRevision(
     examBodyId = result.examBodyId;
     items = result.items.filter(i => i.question.subject.slug === input.subjectSlug
       && (!input.topicSlug || i.question.topic?.slug === input.topicSlug))
-      .sort((a, b) => Number(a.outcome === "correct") - Number(b.outcome === "correct")).slice(0, 20);
+      .sort((a, b) => Number(a.outcome === "correct") - Number(b.outcome === "correct")).slice(0, cap);
   }
   if (!items.length) throw new Error("No questions are available for this revision.");
-  if (meter) {
-    const allowance = await readPracticeAllowance(userId, meter);
-    if (!allowance) throw new Error("Practice is unavailable right now. Please try again shortly.");
-    if (allowance.available < 1) throw new PracticeAllowanceExhausted(meter);
-    items = items.slice(0, allowance.available);
-  }
   const db = createAdminClient();
   const { data: subject, error: subjectError } = await db.from("subjects").select("id").eq("slug", input.subjectSlug).single();
   if (subjectError || !subject) throw new Error("Subject is unavailable.");
@@ -204,10 +206,7 @@ export async function startRevision(
     p_mode: "practice" as const, p_difficulty: null, p_year_filter: null, p_requested_count: items.length,
     p_provider: "revision", p_duration_seconds: null, p_questions: JSON.parse(JSON.stringify(payload)) as Json,
   };
-  const { data, error } = meter
-    ? await db.rpc("create_metered_practice_session", { ...args, p_day_key: meter.dayKey, p_limit: meter.limit })
-    : await db.rpc("create_practice_session", args);
-  if (error && meter && isPracticeLimitError(error.message)) throw new PracticeAllowanceExhausted(meter);
+  const { data, error } = await db.rpc("create_practice_session", args);
   if (error || !data) throw new Error("Could not start revision. Please try again.");
   return data;
 }

@@ -157,7 +157,7 @@ test('cold-start Home shows no zeroed analytics dressed up as progress', async (
   assert.ok(!markup.includes('Subject performance'));
   assert.ok(!markup.includes('Weak areas'));
   assert.ok(!markup.includes('ready for review'), 'no 0-mistake counter');
-  assert.ok(!markup.includes('Continue where you need it most'), 'nothing is claimed to be weak');
+  assert.ok(!markup.includes('Continue learning'), 'nothing is claimed to be weak');
 });
 
 test('WAEC Home offers timed subject practice instead of a JAMB full mock', async () => {
@@ -190,10 +190,10 @@ test('Home exposes exactly one page-level heading', async () => {
   setState({ history: [previousMock, latestMock] });
   const markup = await renderHome();
   assert.equal((markup.match(/<h1/g) ?? []).length, 1);
-  assert.ok((markup.match(/<h2/g) ?? []).length >= 3, 'sections are h2s beneath it');
+  assert.ok((markup.match(/<h2/g) ?? []).length >= 2, 'sections are h2s beneath it');
 });
 
-test('an active exam is surfaced with a prominent resume control', async () => {
+test('36. an active exam is surfaced at the top with a prominent resume control', async () => {
   setState({
     activeExam: {
       id: 'attempt-9', examName: 'JAMB', status: 'in_progress',
@@ -210,47 +210,48 @@ test('an active exam is surfaced with a prominent resume control', async () => {
   assert.ok(markup.includes('href="/exam/attempt-9"'), 'resume routing is unchanged');
   // Full control height, not a text-sized link.
   assert.ok(markup.includes('h-11'));
+  // It outranks every suggestion the product might make.
+  assert.ok(
+    markup.indexOf('Exam in progress') < markup.indexOf('Quick actions'),
+    'unfinished work comes before the shortcuts',
+  );
+  assert.equal((markup.match(/Resume exam/g) ?? []).length, 1, 'never two resume cards for one attempt');
 });
 
-test('Home with history renders the real mock, subject and mistake data', async () => {
+test('44. one progress card carries the mock, the mistakes and the weakest subject', async () => {
   setState({ history: [previousMock, latestMock] });
   const markup = await renderHome();
 
+  assert.ok(markup.includes('Your progress'));
   assert.ok(markup.includes('Latest mock'));
-  assert.ok(markup.includes('240'), 'the latest mock score');
-  assert.ok(markup.includes('/ 400'));
+  assert.ok(markup.includes('240/400'), 'the latest mock score');
   assert.ok(markup.includes('Estimated JAMB score'), 'scaled scores are labelled as estimates');
   assert.ok(markup.includes('href="/progress/results/exam/mock-new"'));
 
-  assert.ok(markup.includes('Subject performance'));
-  assert.ok(markup.includes('Latest attempt'), 'the period is stated, not assumed');
-  assert.ok(markup.includes('Physics'));
-  assert.ok(markup.includes('Chemistry'));
+  assert.ok(markup.includes('Mistakes to review'));
+  assert.ok(markup.includes('Physics'), 'the weakest subject in the latest attempt');
+  assert.ok(markup.includes('View progress'));
 
-  assert.ok(markup.includes('ready for review'), 'mistake bank count is shown');
-  assert.ok(markup.includes('Weak areas'));
-  assert.ok(markup.includes('Waves'));
-  assert.ok(!markup.includes('Moles'), 'a topic above the threshold is not called weak');
+  /*
+   * The three cards this replaced. Their absence is the deliverable: Latest
+   * Mock, Mistakes Ready and Subject Performance each had their own full-width
+   * panel, which is what made the dashboard unreadable on a phone.
+   */
+  assert.ok(!markup.includes('Subject performance'), 'no separate subject card');
+  assert.ok(!markup.includes('ready for review'), 'no separate mistakes card');
+  assert.ok(!markup.includes('Weak areas'), 'no separate weak-areas card');
+  assert.ok(!markup.includes('your previous mock'), 'the delta lives on the progress page now');
 });
 
-test('mock delta is directional and only claimed when a previous mock exists', async () => {
-  setState({ history: [previousMock, latestMock] });
-  const improved = await renderHome();
-  assert.ok(improved.includes('Up 60'), '240 - 180');
-  assert.ok(improved.includes('text-success-700'));
-
-  setState({ history: [latestMock] });
-  const first = await renderHome();
-  assert.ok(!first.includes('your previous mock'), 'an unknown change is not a change of zero');
-});
-
-test('the top recommendation targets the weakest topic and starts a revision session', async () => {
+test('37. one recommendation card targets the weakest topic and starts a revision session', async () => {
   setState({ history: [latestMock] });
   const markup = await renderHome();
 
-  assert.ok(markup.includes('Continue where you need it most'));
+  assert.ok(markup.includes('Continue learning'));
+  assert.ok(markup.includes('Continue Waves'));
   assert.ok(markup.includes('Practise Waves'));
-  assert.ok(markup.includes('1 of 4 correct (25%) in your latest attempt.'));
+  assert.ok(markup.includes('1 of 4 correct on your latest attempt'));
+  assert.equal((markup.match(/Continue learning/g) ?? []).length, 1, 'one card, never a stack');
   // Real accuracy from the attempt, and no hardcoded subject anywhere.
   // The shortcut tile carries ?quick=1, which Practice Setup now reads to
   // preselect this same recommendation. Nothing links to a parameter that is
@@ -313,31 +314,84 @@ test('latest mock summary ignores practice sessions and reports a null first del
   assert.equal(latestMockSummary([previousMock, latestMock], EXAM_BODY).delta, 60);
 });
 
-// ─────────────────────────────────────────── Free plan v2: the dashboard card
+// ───────────────────────────────── the Free plan card, and the page ordering
 
-const { freeUsage } = await import('./stubs/billing-usage.mjs');
+const { ACTIVE_PRACTICE, freeUsage } = await import('./stubs/billing-usage.mjs');
 
-test('43. a Free student sees their plan and today’s counts near the top of Home', async () => {
-  setState();
-  globalThis.__usage = freeUsage({ practice: { used: 1 }, mocks: { used: 1 } });
+async function renderFreeHome(usage, state = {}) {
+  setState(state);
+  globalThis.__usage = usage;
   try {
-    const markup = await renderHome();
-    const card = markup.indexOf('Free Plan');
-    assert.ok(card > 0);
-    const progress = markup.indexOf('Your progress will appear here');
-    assert.ok(progress > 0 && card < progress, 'the card sits near the top, above the page body');
-    assert.ok(markup.includes('3 of 4 questions remaining today'));
-    assert.ok(markup.includes('1 of 2 remaining this month'));
-    assert.ok(markup.includes('2 of 2 explanations remaining today'));
-    assert.ok(markup.includes('href="/pricing?source=dashboard#plans"'));
+    return await renderHome();
   } finally {
     globalThis.__usage = undefined;
   }
+}
+
+test('39/42/43. a Free student sees today’s real counts in the compact card', async () => {
+  const markup = await renderFreeHome(freeUsage({ practice: { used: 0 }, mocks: { used: 1 } }));
+
+  assert.ok(markup.includes('Free plan'));
+  assert.ok(markup.includes('1 practice session available today'));
+  assert.ok(markup.includes('1 of 2 remaining this month'));
+  assert.ok(markup.includes('2 of 2 remaining today'));
+  assert.ok(markup.includes('href="/pricing?source=dashboard#plans"'));
 });
 
-test('Home shows an active Master student no Free card and no upgrade prompt', async () => {
+test('40/41. the practice row follows the session: in progress, then used', async () => {
+  const running = await renderFreeHome(freeUsage({ practice: { used: 1, activeSession: ACTIVE_PRACTICE } }));
+  assert.ok(running.includes('Session in progress'));
+  assert.ok(running.includes('href="/practice/session/session-1"'), 'and it can be resumed');
+
+  const finished = await renderFreeHome(freeUsage({ practice: { used: 1 } }));
+  assert.ok(finished.includes('Today’s session used'));
+  assert.ok(!finished.includes('Session in progress'));
+});
+
+test('34/35. the dashboard carries one upgrade CTA above the fold and one in the card', async () => {
+  const markup = await renderFreeHome(freeUsage());
+  const ctas = [...markup.matchAll(/href="\/pricing\?source=([a-z_]+)#plans"/g)].map((match) => match[1]);
+
+  assert.deepEqual(ctas, ['dashboard', 'dashboard'], 'the header button and the plan card — nothing else');
+  assert.ok(!markup.includes('nav_mobile'), 'no strip: the header already carries it');
+  assert.ok(!markup.includes('Master from'), 'no price line competing with the study surface');
+});
+
+test('47. the page reads in the agreed priority order', async () => {
+  const markup = await renderFreeHome(
+    freeUsage({ practice: { used: 1, activeSession: ACTIVE_PRACTICE } }),
+    { history: [previousMock, latestMock] },
+  );
+
+  // The plan card is matched by its own heading id: "Free plan" also appears as
+  // the small badge beside the student's name, which is deliberate and earlier.
+  const order = [
+    'Welcome back, Ada.', 'Practice in progress', 'Continue learning',
+    'Quick actions', 'id="free-plan-heading"', 'Your progress',
+  ];
+  const positions = order.map((label) => markup.indexOf(label));
+  for (const [index, position] of positions.entries()) {
+    assert.ok(position > 0, order[index] + ' is missing');
+    if (index > 0) {
+      assert.ok(position > positions[index - 1], order[index] + ' must come after ' + order[index - 1]);
+    }
+  }
+});
+
+test('45. the tutoring recommendation sits below everything a student studies with', async () => {
+  const markup = await renderFreeHome(freeUsage(), { history: [previousMock, latestMock] });
+  const tutor = markup.indexOf('Get Tutor Help');
+
+  if (tutor > 0) {
+    assert.ok(tutor > markup.indexOf('Quick actions'), 'never above Practice and Mock');
+    assert.ok(tutor > markup.indexOf('Your progress'), 'never above Progress');
+  }
+});
+
+test('46. an active Master student sees no Free card and no sales copy', async () => {
   setState();
   const markup = await renderHome();
-  assert.ok(!markup.includes('Free Plan'));
+  assert.ok(!markup.includes('Free plan'));
   assert.ok(!markup.includes('Upgrade to Master'));
+  assert.ok(markup.includes('Master'), 'their plan status is still shown');
 });

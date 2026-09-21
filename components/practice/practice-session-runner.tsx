@@ -9,14 +9,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Lock,
   RotateCcw,
   XCircle,
 } from "lucide-react";
 
-import { AllowanceNotice } from "@/components/billing/allowance-notice";
-import { UpgradeLink } from "@/components/billing/upgrade-link";
-import { countNoun, PRACTICE_ONE_REMAINING, practiceExhausted, practiceRemainingLine } from "@/features/billing/copy";
 
 import type {
   CompletePracticeSessionResult,
@@ -97,18 +93,14 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
     [answers],
   );
   /*
-   * The free allowance, as the server last reported it — on load, then with
-   * every saved answer. Display only: the server charges and refuses answers,
-   * and the queue drops any it refuses.
+   * Nothing on this screen is metered.
+   *
+   * The plan counts practice *sessions*, once, when one is created. Every
+   * question in this session is already paid for, so the runner carries no
+   * allowance, no counter and no upgrade prompt: a student who started a
+   * session always finishes it — across a refresh, a reconnect, a second
+   * device and midnight.
    */
-  const allowance = sync.allowance;
-  const freeRemaining = allowance ? (sync.limited ? 0 : allowance.remaining) : null;
-  const lockedCount = initialSession.questions.filter((question) => question.locked).length;
-  // Held questions only: a session built before this release holds nothing, and
-  // finishing it charges nothing.
-  const unansweredOpen = initialSession.questions.filter(
-    (question) => question.held && !answers[question.id]?.selectedOptionKey,
-  ).length;
 
   if (completion) {
     const pct = scorePercent(completion.correctCount, completion.questionCount);
@@ -133,18 +125,6 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
               </InlineAlert>
             </div>
           )}
-          {allowance && freeRemaining === 0 ? (
-            <div className="mt-4 text-left">
-              <AllowanceNotice
-                message={practiceExhausted(allowance.limit).message}
-                upgrade={practiceExhausted(allowance.limit).upgrade}
-                source="practice_exhausted"
-                detail="Your result and every explanation are ready to review now."
-              />
-            </div>
-          ) : allowance && freeRemaining !== null ? (
-            <p className="mt-4 text-[12.5px] text-slate-600">{practiceRemainingLine(freeRemaining, allowance.limit)}.</p>
-          ) : null}
           {/* Reviewing the result is the next step; practising again is the alternative. */}
           <div className="mt-6 flex flex-col gap-2.5">
             <Link href={`/progress/results/practice/${initialSession.id}`} className={buttonClasses({ variant: "dark", size: "lg" })}>
@@ -244,20 +224,6 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
 
       <SyncNotice ready={sync.ready} error={sync.error} code={sync.code} online={sync.online} expired={secondsLeft === 0} onConflict={() => void sync.resolveConflict()} onStorageRetry={() => void sync.retryStorage()} />
 
-      {allowance && freeRemaining === 0 && (sync.limited || lockedCount > 0 || unansweredOpen === 0) ? (
-        <AllowanceNotice
-          className="mb-4"
-          message={practiceExhausted(allowance.limit).message}
-          upgrade={practiceExhausted(allowance.limit).upgrade}
-          source="practice_exhausted"
-          detail={lockedCount > 0
-            ? `${countNoun(lockedCount, "question")} in this session ${lockedCount === 1 ? "unlocks" : "unlock"} when your free questions reset at midnight (WAT).`
-            : "Your answers are saved. Finish the session to see your result."}
-        />
-      ) : allowance && freeRemaining === 1 ? (
-        <AllowanceNotice className="mb-3" emphasis="subtle" message={PRACTICE_ONE_REMAINING} source="practice_one_remaining" />
-      ) : null}
-
       <main className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -268,26 +234,6 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
           </div>
           <Badge tone="neutral">{initialSession.mode === "timed" ? "Timed" : "Practice"} mode</Badge>
         </div>
-
-        {current.locked ? (
-          /*
-           * The server withheld this question: today's free allowance cannot
-           * cover it. There is nothing here to reveal — the stem and options
-           * were never sent — so this says why, and what changes it.
-           */
-          <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center">
-            <Lock aria-hidden="true" className="mx-auto h-5 w-5 text-slate-500" />
-            <p className="mt-2 text-[13.5px] font-bold text-slate-950">This question is locked for today</p>
-            <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-[1.6] text-slate-600">
-              {allowance ? practiceExhausted(allowance.limit).message : "You’ve used today’s free practice questions."}{" "}
-              It unlocks when your free questions reset at midnight (WAT), or straight away with Master.
-            </p>
-            <UpgradeLink
-              source="practice_exhausted"
-              className={buttonClasses({ variant: "dark", size: "md", className: "mt-3.5 w-full sm:w-auto sm:min-w-44" })}
-            />
-          </div>
-        ) : null}
 
         {question.passage ? (
           <div className="mt-4 max-h-64 overflow-y-auto rounded-2xl bg-brand-50 px-4 py-3.5">
@@ -332,9 +278,9 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
               <button
                 key={option.id}
                 type="button"
-                disabled={!sync.ready || feedbackLocked || completing || secondsLeft === 0 || Boolean(current.locked)
-                  // The server has refused a free answer: only questions it already holds can still be answered.
-                  || (Boolean(sync.limited) && !current.held && !currentState.selectedOptionKey)
+                disabled={!sync.ready || feedbackLocked || completing || secondsLeft === 0
+                  // The server refused to save an answer for a reason a retry cannot fix.
+                  || (Boolean(sync.limited) && !currentState.selectedOptionKey)
                   || (initialSession.mode === "practice" && Boolean(currentState.selectedOptionKey))}
                 aria-pressed={selected}
                 onClick={() => void sync.select(current.id, { selectedOptionKey: option.key, isFlagged: false })}
@@ -405,17 +351,6 @@ export function PracticeSessionRunner({ initialSession, recovered = false, aiExp
           recovered ? "bottom-0 safe-area-bottom" : navClearance.bottom,
         )}
       >
-        {finalQuestion && allowance && unansweredOpen > 0 ? (
-          /*
-           * Finishing reveals every answer and explanation in the result, so an
-           * unanswered question a free session holds still counts once the
-           * session ends. Said before the tap, not after.
-           */
-          <p className="mx-auto mb-2 max-w-[680px] text-center text-[11.5px] leading-4 text-slate-500">
-            {countNoun(unansweredOpen, "unanswered question")} still {unansweredOpen === 1 ? "counts" : "count"} toward
-            today’s free questions when you finish, because your result shows {unansweredOpen === 1 ? "its answer" : "their answers"}.
-          </p>
-        ) : null}
         <div className="mx-auto flex max-w-[680px] items-center gap-2.5">
           <Button
             type="button"

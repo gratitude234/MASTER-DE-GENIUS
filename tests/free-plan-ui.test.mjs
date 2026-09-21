@@ -49,16 +49,21 @@ const html = (element) => renderToStaticMarkup(element).replace(/<!--.*?-->/g, '
 const { StudentNavigation } = await import('../components/app-shell/student-navigation.tsx');
 const { PlanStrip } = await import('../components/billing/plan-status.tsx');
 const { FreePlanCard } = await import('../components/billing/free-plan-card.tsx');
+const { HomeHeader } = await import('../components/home/home-header.tsx');
+const { ResumeCard } = await import('../components/home/resume-card.tsx');
+const { ProgressSummaryCard } = await import('../components/home/progress-summary-card.tsx');
+const { ContinueLearningCard } = await import('../components/home/continue-learning-card.tsx');
+const { QuickActions } = await import('../components/home/quick-actions.tsx');
+const { resumeItem } = await import('../features/home/resume.ts');
 const { PracticeSetup, allowedQuestionCounts } = await import('../components/practice/practice-setup.tsx');
 const { PracticeSessionRunner } = await import('../components/practice/practice-session-runner.tsx');
 const { MockExamSetup } = await import('../components/exam/mock-exam-setup.tsx');
 const { AiQuestionExplanation } = await import('../components/ai/question-explanation.tsx');
 const { AiAllowanceProvider } = await import('../components/billing/ai-allowance.tsx');
 const { UpgradeLink } = await import('../components/billing/upgrade-link.tsx');
-const { freeUsage, MASTER_USAGE } = await import('./stubs/billing-usage.mjs');
+const { ACTIVE_PRACTICE, freeUsage, MASTER_USAGE } = await import('./stubs/billing-usage.mjs');
 const copy = await import('../features/billing/copy.ts');
 const upgrade = await import('../features/billing/upgrade.ts');
-const plans = await import('../features/billing/plans.ts');
 
 const FREE_BADGE = { tier: 'free', masterUntil: null };
 const MASTER_BADGE = { tier: 'master', masterUntil: '2026-12-31T00:00:00.000Z' };
@@ -83,7 +88,7 @@ test('42. Master navigation shows the plan and its end date, and never an upgrad
 });
 
 test('52. phones get the upgrade action above every major page, never covering it', () => {
-  for (const pathname of ['/home', '/practice', '/mock', '/progress', '/progress/mistakes', '/me', '/classes']) {
+  for (const pathname of ['/practice', '/mock', '/progress', '/progress/mistakes', '/me', '/classes']) {
     globalThis.__pathname = pathname;
     const markup = html(h(PlanStrip, { plan: FREE_BADGE }));
     assert.ok(markup.includes('lg:hidden'), `${pathname}: phone-only, the rail covers desktop`);
@@ -91,11 +96,11 @@ test('52. phones get the upgrade action above every major page, never covering i
     assert.ok(markup.includes('min-h-11'), `${pathname}: a comfortable touch target`);
     assert.ok(!/fixed|absolute/.test(markup), `${pathname}: in the flow, not an overlay`);
   }
-  for (const pathname of ['/practice/session/abc', '/pricing', '/billing', '/billing/callback']) {
+  for (const pathname of ['/home', '/practice/session/abc', '/pricing', '/billing', '/billing/callback']) {
     globalThis.__pathname = pathname;
     assert.equal(html(h(PlanStrip, { plan: FREE_BADGE })), '', `${pathname}: not during a session or on the plan pages`);
   }
-  globalThis.__pathname = '/home';
+  globalThis.__pathname = '/practice';
   assert.equal(html(h(PlanStrip, { plan: MASTER_BADGE })), '', 'Master students never see it');
   globalThis.__pathname = undefined;
 });
@@ -109,89 +114,221 @@ test('the shell renders the plan indicator once, from the server-resolved entitl
 
 // ─────────────────────────────────────────────────────────── dashboard
 
-test('43. the dashboard Free card shows the server’s counts, in the plain words specified', () => {
-  const usage = freeUsage({ practice: { used: 1 }, mocks: { used: 1 }, ai: { used: 0 } });
+test('39/42/43. the compact Free card shows the server counts in the specified words', () => {
+  const usage = freeUsage({ practice: { used: 0 }, mocks: { used: 1 }, ai: { used: 0 } });
   const markup = html(h(FreePlanCard, { usage }));
 
-  assert.ok(markup.includes('Free Plan'));
-  assert.ok(markup.includes('3 of 4 questions remaining today'));
+  assert.ok(markup.includes('Free plan'));
+  assert.ok(markup.includes('1 practice session available today'), 'a state, not a fraction');
   assert.ok(markup.includes('1 of 2 remaining this month'));
-  assert.ok(markup.includes('2 of 2 explanations remaining today'));
+  assert.ok(markup.includes('2 of 2 remaining today'));
   assert.deepEqual(upgradeHrefs(markup), ['/pricing?source=dashboard#plans']);
-  assert.ok(markup.includes('Daily allowances reset at midnight (WAT).'), 'the reset is stated, not counted down');
+  assert.ok(markup.includes('Resets at midnight (WAT)'), 'the reset is stated, not counted down');
   assert.ok(!/quota|ledger|reservation|entitlement/i.test(markup), 'no internal vocabulary');
+  assert.ok(!/question(s)? remaining/i.test(markup), 'the cancelled per-question model is gone');
 });
 
-test('53. the dashboard price comes from the billing catalogue, not a copy of it', () => {
-  const cheapest = [...plans.purchasablePlans()].sort((a, b) => a.priceKobo - b.priceKobo)[0];
-  const markup = html(h(FreePlanCard, { usage: freeUsage() }));
-  assert.ok(markup.includes(`Master from ${plans.formatNaira(cheapest.priceKobo)} for ${cheapest.durationDays} days`));
-  assert.ok(markup.includes('1,500'), 'currently ₦1,500 for 30 days');
+test('40. an unfinished session reads as in progress, and offers Resume', () => {
+  const usage = freeUsage({ practice: { used: 1, activeSession: ACTIVE_PRACTICE } });
+  const markup = html(h(FreePlanCard, { usage }));
+
+  assert.ok(markup.includes('Session in progress'));
+  assert.ok(!markup.includes('Today’s session used'), 'nothing has been lost, so nothing says it has');
+  assert.ok(markup.includes('href="/practice/session/session-1"'), 'Resume is one tap, from the card');
+  assert.ok(markup.includes('Resume session'));
+});
+
+test('41. once today’s session is finished the card says so plainly', () => {
+  const markup = html(h(FreePlanCard, { usage: freeUsage({ practice: { used: 1 } }) }));
+
+  assert.ok(markup.includes('Today’s session used'));
+  assert.ok(!markup.includes('Resume session'), 'there is nothing to resume');
+  assert.deepEqual(upgradeHrefs(markup), ['/pricing?source=dashboard#plans']);
 });
 
 test('the dashboard card never guesses a count it could not read', () => {
   const usage = freeUsage();
   usage.mocks = { ...usage.mocks, used: null, remaining: null };
+  usage.practice = { ...usage.practice, used: null, remaining: null };
   const markup = html(h(FreePlanCard, { usage }));
+
   assert.ok(markup.includes('Up to 2 mocks a month'));
+  assert.ok(markup.includes('Up to 1 session a day'));
   assert.ok(!markup.includes('NaN') && !markup.includes('null'));
 });
 
-test('questions waiting in an unfinished session are named on the dashboard, with correct grammar', () => {
-  assert.ok(html(h(FreePlanCard, { usage: freeUsage({ practice: { used: 1, waiting: 1 } }) })).includes('1 question waiting in an unfinished session'));
-  assert.ok(html(h(FreePlanCard, { usage: freeUsage({ practice: { used: 0, waiting: 3 } }) })).includes('3 questions waiting in an unfinished session'));
+test('34/35. the dashboard header carries exactly one upgrade action, and no second banner', () => {
+  const markup = html(h(HomeHeader, { name: 'Ada', examLabel: 'JAMB 2027 Preparation', tier: 'free' }));
+
+  assert.deepEqual(upgradeHrefs(markup), ['/pricing?source=dashboard#plans'], 'one, and only one');
+  assert.ok(markup.includes('Welcome back, Ada.'));
+  assert.ok(markup.includes('Free plan'), 'a small badge, not a panel');
+  assert.ok(!/Upgrade to Master[\s\S]*Upgrade to Master/.test(markup), 'never two CTAs in the header');
+});
+
+test('46. a Master student sees their status in the header, and no sales copy anywhere', () => {
+  const markup = html(h(HomeHeader, {
+    name: 'Ada', examLabel: 'JAMB 2027 Preparation', tier: 'master', masterUntil: '2026-12-31T00:00:00.000Z',
+  }));
+
+  assert.deepEqual(upgradeHrefs(markup), [], 'nothing is being sold to a paying student');
+  assert.ok(markup.includes('Master'));
+  assert.ok(markup.includes('31 Dec'), 'the date access runs to');
+  assert.ok(!markup.includes('Free plan'));
+});
+
+test('35. the mobile upgrade strip stands down on the dashboard, which has its own', () => {
+  globalThis.__pathname = '/home';
+  assert.equal(html(h(PlanStrip, { plan: FREE_BADGE })), '', 'no strip above a page that already has a header CTA');
+  globalThis.__pathname = undefined;
+});
+
+// ────────────────────────────────────────────── dashboard: resume & progress
+
+test('36. unfinished work appears at the top, and a mock outranks a practice session', () => {
+  // `now` is injected so the time chip is exact rather than a rounding race.
+  const now = Date.UTC(2026, 8, 21, 9, 0, 0);
+  const activeExam = {
+    id: 'attempt-1', examName: 'JAMB', totalQuestions: 180, answeredCount: 3,
+    flaggedCount: 0, expiresAt: new Date(now + 76 * 60_000).toISOString(),
+  };
+
+  const both = resumeItem({ activeExam, activePractice: ACTIVE_PRACTICE, now });
+  assert.equal(both.href, '/exam/attempt-1', 'the timed paper that expires wins');
+  assert.equal(both.title, 'JAMB Mock in progress');
+  assert.deepEqual(both.facts, ['3/180 answered', '1h 16m left']);
+  assert.equal(both.actionLabel, 'Resume exam');
+
+  const practiceOnly = resumeItem({ activeExam: null, activePractice: ACTIVE_PRACTICE, now });
+  assert.equal(practiceOnly.href, '/practice/session/session-1');
+  assert.deepEqual(practiceOnly.facts, ['6/20 answered']);
+
+  assert.equal(resumeItem({ activeExam: null, activePractice: null }), null, 'nothing to resume, nothing shown');
+});
+
+test('36b. the resume card renders one item — never two competing cards', () => {
+  const markup = html(h(ResumeCard, { item: resumeItem({ activeExam: null, activePractice: ACTIVE_PRACTICE }) }));
+  assert.equal((markup.match(/Resume session/g) ?? []).length, 1);
+  assert.ok(markup.includes('Mathematics practice in progress'));
+  assert.ok(markup.includes('href="/practice/session/session-1"'));
+});
+
+test('44. progress is one card combining the mock, the mistakes and the subject', () => {
+  const markup = html(h(ProgressSummaryCard, {
+    metrics: [
+      { key: 'mock', label: 'Latest mock', value: '31/80', href: '/progress/results/exam/e1' },
+      { key: 'mistakes', label: 'Mistakes to review', value: '20', href: '/progress/mistakes' },
+      { key: 'subject', label: 'Mathematics', value: '6/20' },
+    ],
+  }));
+
+  assert.ok(markup.includes('Your progress'));
+  assert.ok(markup.includes('31/80') && markup.includes('20') && markup.includes('6/20'));
+  assert.ok(markup.includes('View progress'));
+  assert.equal((markup.match(/<section/g) ?? []).length, 1, 'one card, not three');
+});
+
+test('44b. a metric with no data is omitted, never shown as a zero', () => {
+  const markup = html(h(ProgressSummaryCard, { metrics: [{ key: 'mistakes', label: 'Mistakes to review', value: '4' }] }));
+  assert.ok(!markup.includes('Latest mock'));
+  assert.equal(html(h(ProgressSummaryCard, { metrics: [] })), '', 'no data at all renders nothing');
+});
+
+test('37. Continue Learning shows one recommendation, or nothing', () => {
+  const markup = html(h(ContinueLearningCard, {
+    recommendation: {
+      kind: 'subject', resultId: 'r1', resultKind: 'practice', subjectSlug: 'mathematics',
+      subjectName: 'Mathematics', accuracy: 30, correct: 6, total: 20,
+    },
+  }));
+
+  assert.ok(markup.includes('Continue Mathematics'));
+  assert.ok(markup.includes('6 of 20 correct on your latest attempt'));
+  assert.equal((markup.match(/<section/g) ?? []).length, 1, 'exactly one card');
+  assert.equal(
+    html(h(ContinueLearningCard, { recommendation: { kind: 'start', hasHistory: true } })),
+    '',
+    'nothing to recommend means nothing is rendered',
+  );
+});
+
+test('38. quick actions are Practice, the exam session, Past Questions and Mistakes', () => {
+  const jamb = html(h(QuickActions, { examCode: 'jamb' }));
+  const hrefs = [...jamb.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(hrefs, ['/practice', '/mock', '/practice?mode=past', '/progress/mistakes']);
+  assert.ok(jamb.includes('Practice') && jamb.includes('Full Mock'));
+  assert.ok(jamb.includes('Past Questions') && jamb.includes('Mistakes'));
+  assert.ok(jamb.includes('grid-cols-2'), '2x2 on a phone');
+
+  const waec = html(h(QuickActions, { examCode: 'waec' }));
+  assert.ok(waec.includes('Timed Subject'), 'WAEC has no full mock, so it is offered its own session');
 });
 
 // ─────────────────────────────────────────────────────── practice setup
 
-const setupProps = (practiceAllowance) => ({
+const setupProps = (practiceUsage, tier = 'free') => ({
   tab: 'practice', examCode: 'jamb', examName: 'JAMB', examYear: 2027,
   subjects: [{ id: 's1', slug: 'physics', name: 'Physics', topics: [] }],
   capabilities: { years: false, topics: false, difficulty: false },
   unavailableSubjects: [], recommendation: { kind: 'start', hasHistory: false },
-  prefillFromRecommendation: false, resumeSession: null, practiceAllowance,
+  prefillFromRecommendation: false, resumeSession: null, practiceUsage, tier,
 });
 const countButtons = (markup) => {
   const group = markup.slice(markup.indexOf('aria-labelledby="practice-count-label"'), markup.indexOf('id="practice-mode-label"'));
   return [...group.matchAll(/aria-pressed="(?:true|false)"[^>]*>(\d+)</g)].map((m) => Number(m[1]));
 };
 
-test('7. a new Free student is offered 1–4 questions, never the 10/20/30/40 sizes', () => {
+test('3/4. a Free student is offered up to 20 questions, never 30 or 40', () => {
   const markup = html(h(PracticeSetup, setupProps(freeUsage().practice)));
-  assert.deepEqual(countButtons(markup), [1, 2, 3, 4]);
-  assert.ok(markup.includes('Start 4-question session'));
-  assert.ok(markup.includes('4 of 4 practice questions remaining today'));
-  assert.ok(markup.includes('Free plan: up to 4 questions right now'));
+
+  assert.deepEqual(countButtons(markup), [10, 20]);
+  assert.ok(markup.includes('Start 20-question session'), 'the default is the full 20');
+  assert.ok(markup.includes('1 practice session available today'));
+  assert.ok(markup.includes('Free plan: up to 20 questions in a session'));
 });
 
-test('7b. with 2 left the choice is 1–2; Master keeps the full sizes', () => {
-  assert.deepEqual(countButtons(html(h(PracticeSetup, setupProps(freeUsage({ practice: { used: 2 } }).practice)))), [1, 2]);
-  assert.deepEqual(countButtons(html(h(PracticeSetup, setupProps(null)))), [10, 20, 30, 40]);
-  assert.deepEqual(allowedQuestionCounts(0), []);
-  assert.deepEqual(allowedQuestionCounts(1), [1]);
+test('13. Master keeps the full 10/20/30/40 sizes and sees no Free copy', () => {
+  const markup = html(h(PracticeSetup, setupProps(MASTER_USAGE.practice, 'master')));
+
+  assert.deepEqual(countButtons(markup), [10, 20, 30, 40]);
+  assert.ok(!markup.includes('Free plan'));
+  assert.deepEqual(upgradeHrefs(markup), []);
 });
 
-test('44. one practice question left gets the exact one-remaining line and a quiet upgrade link', () => {
-  const markup = html(h(PracticeSetup, setupProps(freeUsage({ practice: { used: 3 } }).practice)));
-  assert.ok(markup.includes('You have 1 free practice question remaining today.'));
-  assert.ok(upgradeHrefs(markup).includes('/pricing?source=practice_one_remaining#plans'));
-  assert.ok(markup.includes('Start 1-question session'));
+test('the offered sizes are derived from the plan ceiling, never hard-coded', () => {
+  assert.deepEqual(allowedQuestionCounts(20), [10, 20]);
+  assert.deepEqual(allowedQuestionCounts(40), [10, 20, 30, 40]);
+  assert.deepEqual(allowedQuestionCounts(5), [5], 'a ceiling below every standard size is still offerable');
+  assert.deepEqual(allowedQuestionCounts(25), [10, 20, 25], 'the ceiling is always reachable');
 });
 
-test('45. none left: the exhausted message, a real Upgrade button, and no way to start', () => {
-  const markup = html(h(PracticeSetup, setupProps(freeUsage({ practice: { used: 4 } }).practice)));
-  assert.ok(markup.includes('You’ve used today’s 4 free practice questions.'));
-  assert.ok(markup.includes('Upgrade to Master to keep practising today.'));
+test('a session already in progress offers Resume, and does not claim a loss', () => {
+  const usage = freeUsage({ practice: { used: 1, activeSession: ACTIVE_PRACTICE } }).practice;
+  const markup = html(h(PracticeSetup, setupProps(usage)));
+
+  assert.ok(markup.includes('Today’s practice session is already in progress'));
+  assert.ok(markup.includes('Finish the session you started — resuming it never uses another.'));
+  assert.ok(upgradeHrefs(markup).includes('/pricing?source=practice_session_in_progress#plans'));
+  assert.ok(!markup.includes('has been used'));
+});
+
+test('5. none left: the exhausted message, a real Upgrade button, and no way to start', () => {
+  const markup = html(h(PracticeSetup, setupProps(freeUsage({ practice: { used: 1 } }).practice)));
+
+  assert.ok(markup.includes('You’ve used today’s free practice session.'));
+  assert.ok(markup.includes('Upgrade to Master to start more practice sessions today.'));
   assert.ok(upgradeHrefs(markup).includes('/pricing?source=practice_exhausted#plans'));
-  assert.ok(markup.includes('No free questions left to start today'));
-  assert.match(markup, /<button[^>]*disabled=""[^>]*>[\s\S]*?No free questions left to start today/);
+  assert.ok(markup.includes('Today’s free practice session has been used'));
+  assert.match(markup, /<button[^>]*disabled=""[^>]*>[\s\S]*?Today’s free practice session has been used/);
   assert.ok(markup.includes('Your results, answers and mistake bank stay available.'));
 });
 
-test('questions waiting in an unfinished session are described as waiting, not used', () => {
-  const markup = html(h(PracticeSetup, setupProps(freeUsage({ practice: { used: 1, waiting: 3 } }).practice)));
-  assert.ok(markup.includes('Your 3 remaining questions are waiting in a session you haven’t finished.'));
-  assert.ok(!markup.includes('You’ve used today’s'));
+test('an unreadable allowance is an outage, not a used-up day', () => {
+  const usage = freeUsage().practice;
+  const markup = html(h(PracticeSetup, setupProps({ ...usage, used: null, remaining: null })));
+
+  assert.ok(markup.includes('We couldn’t check today’s free practice session just now.'));
+  assert.ok(!markup.includes('has been used'), 'a student is never told they spent a session they did not');
 });
 
 // ────────────────────────────────────────────────────── practice runner
@@ -209,48 +346,36 @@ const session = (questions) => ({
 const sync = (overrides = {}) => ({
   answers: {}, ready: true, state: 'saved', online: true, error: '', code: '', secondsLeft: null,
   cursor: { subject: 0, question: 0 }, select() {}, setCursor() {}, flush() {}, finish() {}, finishing: false,
-  receipt: null, pendingCount: 0, resolveConflict() {}, retryStorage() {}, allowance: null, limited: false, ...overrides,
+  receipt: null, pendingCount: 0, resolveConflict() {}, retryStorage() {}, limited: false, ...overrides,
 });
 
-test('a locked question shows why and what unlocks it — and has nothing to reveal', () => {
-  const locked = { revision: 0, id: 'pq-1', position: 1, locked: true, question: { ...question('1', ''), options: [] } };
-  globalThis.__sync = sync({
-    answers: { 'pq-1': { selectedOptionKey: null, isFlagged: false, revision: 0 } },
-    allowance: { limit: 4, used: 4, waiting: 0, remaining: 0, available: 0 },
-  });
-  const markup = html(h(PracticeSessionRunner, { initialSession: session([locked]) }));
+test('8/9. a running session carries no allowance copy and no upgrade prompt, on any tier', () => {
+  /*
+   * The session was paid for when it was created. Interrupting the student
+   * mid-paper to sell them something — or to count down what is left — is
+   * exactly what counting sessions at creation exists to avoid.
+   */
+  for (const tier of ['free', 'master']) {
+    globalThis.__sync = sync({ answers: { 'pq-1': { selectedOptionKey: null, isFlagged: false, revision: 0 } } });
+    const markup = html(h(PracticeSessionRunner, {
+      initialSession: session([{ revision: 0, id: 'pq-1', position: 1, question: question('1', 'Q') }]),
+    }));
 
-  assert.ok(markup.includes('This question is locked for today'));
-  assert.ok(markup.includes('It unlocks when your free questions reset at midnight (WAT), or straight away with Master.'));
-  assert.ok(upgradeHrefs(markup).includes('/pricing?source=practice_exhausted#plans'));
-  assert.ok(!markup.includes('Option A'), 'no answer choices exist for a locked question');
+    assert.ok(!markup.includes('Upgrade to Master'), tier);
+    assert.ok(!/practice question|session available|locked for today/i.test(markup), tier);
+    assert.ok(markup.includes('Option A'), tier + ': every question is answerable');
+  }
 });
 
-test('the runner says when one free question is left, from the server’s count', () => {
+test('8b. every question in the session is delivered — nothing is locked mid-paper', () => {
+  const questions = [1, 2, 3].map((n) => ({ revision: 0, id: `pq-${n}`, position: n, question: question(String(n), `Q${n}`) }));
   globalThis.__sync = sync({
-    answers: { 'pq-1': { selectedOptionKey: null, isFlagged: false, revision: 0 } },
-    allowance: { limit: 4, used: 3, waiting: 1, remaining: 1, available: 0 },
-  });
-  const markup = html(h(PracticeSessionRunner, { initialSession: session([{ revision: 0, id: 'pq-1', position: 1, held: true, question: question('1', 'Q') }]) }));
-  assert.ok(markup.includes('You have 1 free practice question remaining today.'));
-});
-
-test('finishing early is explained before the tap: unanswered held questions still count', () => {
-  const questions = [1, 2].map((n) => ({ revision: 0, id: `pq-${n}`, position: n, held: true, question: question(String(n), `Q${n}`) }));
-  globalThis.__sync = sync({
-    answers: { 'pq-1': { selectedOptionKey: null, isFlagged: false, revision: 0 }, 'pq-2': { selectedOptionKey: null, isFlagged: false, revision: 0 } },
-    cursor: { subject: 0, question: 1 },
-    allowance: { limit: 4, used: 0, waiting: 2, remaining: 4, available: 2 },
+    answers: Object.fromEntries(questions.map((q) => [q.id, { selectedOptionKey: null, isFlagged: false, revision: 0 }])),
   });
   const markup = html(h(PracticeSessionRunner, { initialSession: session(questions) }));
-  assert.ok(markup.includes('2 unanswered questions still count toward'));
-});
 
-test('Master runners carry no Free prompts at all', () => {
-  globalThis.__sync = sync({ answers: { 'pq-1': { selectedOptionKey: null, isFlagged: false, revision: 0 } } });
-  const markup = html(h(PracticeSessionRunner, { initialSession: session([{ revision: 0, id: 'pq-1', position: 1, question: question('1', 'Q') }]) }));
-  assert.ok(!markup.includes('Upgrade to Master'));
-  assert.ok(!markup.includes('free practice question'));
+  assert.ok(!markup.includes('This question is locked'));
+  assert.ok(!markup.includes('unanswered question') || !markup.includes('still count toward'));
 });
 
 // ─────────────────────────────────────────────────────────── mock setup
@@ -354,15 +479,23 @@ test('54. singular and plural copy is correct at every count', () => {
   assert.equal(copy.countNoun(2, 'explanation'), '2 explanations');
   assert.equal(copy.remainingLine(1, 4, 'question', 'day'), '1 of 4 questions remaining today');
   assert.equal(copy.remainingLine(1, 2, null, 'month'), '1 of 2 remaining this month');
-  assert.equal(copy.practiceExhausted(1).message, 'You’ve used today’s 1 free practice question.');
-  assert.equal(copy.practiceExhausted(4).message, 'You’ve used today’s 4 free practice questions.');
+  assert.equal(copy.practiceAvailableLine(1), '1 practice session available today');
+  assert.equal(copy.practiceAvailableLine(3), '3 practice sessions available today');
+  assert.equal(copy.practiceExhausted(1).message, 'You’ve used today’s free practice session.');
+  assert.equal(copy.practiceExhausted(3).message, 'You’ve used today’s 3 free practice sessions.');
+  assert.equal(copy.practiceAllowanceLabel({ sessionsPerDay: 1, maxQuestionsPerSession: 20 }), '1 practice session a day, up to 20 questions');
   assert.equal(copy.mockExhausted(1).message, 'You’ve used your 1 free mock for this month.');
   assert.equal(copy.aiExhausted(2).message, 'You’ve used today’s 2 free MASTER AI explanations.');
 });
 
 test('the specified sentences are written once, word for word', () => {
-  assert.equal(copy.PRACTICE_ONE_REMAINING, 'You have 1 free practice question remaining today.');
-  assert.equal(copy.practiceExhausted(4).upgrade, 'Upgrade to Master to keep practising today.');
+  assert.deepEqual(copy.PRACTICE_SESSION_IN_PROGRESS, {
+    message: 'Today’s practice session is already in progress.',
+    upgrade: 'Upgrade to Master to start more practice sessions today.',
+  });
+  assert.equal(copy.practiceExhausted(1).upgrade, 'Upgrade to Master to start more practice sessions today.');
+  assert.equal(copy.PRACTICE_SESSION_IN_PROGRESS_SHORT, 'Session in progress');
+  assert.equal(copy.PRACTICE_SESSION_USED_SHORT, 'Today’s session used');
   assert.deepEqual(copy.MOCK_ONE_REMAINING, {
     message: 'You have 1 free mock remaining this month.',
     upgrade: 'Upgrade to Master to unlock more mocks and keep preparing without waiting.',
@@ -421,14 +554,21 @@ test('55. the browser can neither send nor forge a count: the routes read no usa
 
 // ───────────────────────────────────────────────────────────── ROLLBACK
 
-test('configuration rollback: a session-counted Free plan takes the old path and reads as sessions', async () => {
-  const { practiceMeterFor } = await import('../features/billing/quota.ts');
-  const rolledBack = { practice: { unit: 'session', perDay: 20 }, mockAttempts: 1, mockAttemptWindow: 'month', aiExplanationsPerDay: 3 };
-  assert.equal(practiceMeterFor({ tier: 'free', limits: rolledBack }), null, 'no question metering, no gating');
+test('configuration rollback: raising the Free numbers needs no code change', async () => {
+  /*
+   * The documented rollback is a change to TIER_LIMITS alone. Nothing branches
+   * on the tier name or on a counting "unit" any more, so a more generous Free
+   * plan must read correctly everywhere without touching a component.
+   */
+  const { capabilityLimit } = await import('../features/billing/quota.ts');
+  const rolledBack = { practice: { sessionsPerDay: 3, maxQuestionsPerSession: 40 }, mockAttempts: 1, mockAttemptWindow: 'month', aiExplanationsPerDay: 3 };
+  assert.deepEqual(capabilityLimit('practice_session', rolledBack), { limit: 3, windowKind: 'day' });
 
   const usage = freeUsage();
-  usage.practice = { ...usage.practice, unit: 'session', limit: 20, used: 2, remaining: 18, waiting: null, available: null };
+  usage.practice = { ...usage.practice, limit: 3, used: 1, remaining: 2, maxQuestionsPerSession: 40 };
   const markup = html(h(FreePlanCard, { usage }));
-  assert.ok(markup.includes('18 of 20 sessions remaining today'));
-  assert.ok(!markup.includes('waiting in an unfinished session'));
+  assert.ok(markup.includes('2 practice sessions available today'), 'plural, from the same one line of copy');
+
+  const setup = html(h(PracticeSetup, setupProps(usage.practice)));
+  assert.ok(setup.includes('Free plan: up to 40 questions in a session'));
 });

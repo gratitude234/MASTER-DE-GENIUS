@@ -1,5 +1,11 @@
 import type { BillingTier } from "@/features/billing/plans";
-import { aiExhausted, mockExhausted, practiceExhausted, resetLine } from "@/features/billing/copy";
+import {
+  aiExhausted,
+  mockExhausted,
+  PRACTICE_SESSION_IN_PROGRESS,
+  practiceExhausted,
+  resetLine,
+} from "@/features/billing/copy";
 import { PLANS_PATH, upgradeHref, type UpgradeSource } from "@/features/billing/upgrade";
 
 /**
@@ -16,7 +22,7 @@ import { PLANS_PATH, upgradeHref, type UpgradeSource } from "@/features/billing/
  * presents it.
  */
 
-export type LimitedCapability = "practice_question" | "practice_session" | "mock_attempt" | "ai_explanation";
+export type LimitedCapability = "practice_session" | "mock_attempt" | "ai_explanation";
 
 export const PLAN_LIMIT_CODE = "PLAN_LIMIT" as const;
 /** The plan-selection page. Every upgrade link goes here, with a source. */
@@ -38,10 +44,16 @@ export interface PlanLimitNotice {
   /** Straight to the plan cards, carrying which prompt sent the student. */
   upgradeHref: string;
   upgradeSource: UpgradeSource | null;
+  /**
+   * Set only when the refusal is "your session is already running". The
+   * student has not lost anything, so the screen leads with Resume and keeps
+   * Master beside it — never a dead end with an upgrade button as the only way
+   * out. Absent on every other refusal.
+   */
+  resumeSessionId?: string;
 }
 
 const EXHAUSTED_SOURCE: Record<LimitedCapability, UpgradeSource> = {
-  practice_question: "practice_exhausted",
   practice_session: "practice_exhausted",
   mock_attempt: "mock_exhausted",
   ai_explanation: "ai_exhausted",
@@ -53,8 +65,14 @@ export function planLimitNotice(input: {
   limit: number;
   resetAt: Date;
   windowKind: "day" | "month";
+  /**
+   * The practice session the student may go back to. Changes the message from
+   * "you've used today's session" to "today's session is already in progress",
+   * which is the truth and the difference between a refusal and a redirect.
+   */
+  resumeSessionId?: string | null;
 }): PlanLimitNotice {
-  const { capability, tier, limit, resetAt, windowKind } = input;
+  const { capability, tier, limit, resetAt, windowKind, resumeSessionId } = input;
   const isFree = tier === "free";
   const resetLabel = resetLine(resetAt, windowKind);
 
@@ -62,13 +80,6 @@ export function planLimitNotice(input: {
   let upgradeMessage: string | null = null;
 
   switch (capability) {
-    case "practice_question": {
-      const copy = practiceExhausted(limit);
-      message = copy.message;
-      upgradeMessage = isFree ? copy.upgrade : null;
-      break;
-    }
-
     case "ai_explanation": {
       if (isFree) {
         const copy = aiExhausted(limit);
@@ -80,12 +91,19 @@ export function planLimitNotice(input: {
       break;
     }
 
-    case "practice_session":
-      message = isFree
-        ? `You’ve started your ${limit} practice sessions for today.`
-        : `You’ve started ${limit} practice sessions today.`;
-      upgradeMessage = isFree ? practiceExhausted(limit).upgrade : null;
+    case "practice_session": {
+      // A running session is not a used-up allowance: it is where the student's
+      // allowance already is. Saying otherwise would send them to buy something
+      // they do not need yet.
+      const copy = resumeSessionId
+        ? PRACTICE_SESSION_IN_PROGRESS
+        : isFree
+          ? practiceExhausted(limit)
+          : { message: `You’ve started ${limit} practice sessions today.`, upgrade: "" };
+      message = copy.message;
+      upgradeMessage = isFree ? copy.upgrade : null;
       break;
+    }
 
     default: {
       if (isFree) {
@@ -99,7 +117,11 @@ export function planLimitNotice(input: {
     }
   }
 
-  const upgradeSource = upgradeMessage ? EXHAUSTED_SOURCE[capability] : null;
+  const upgradeSource = !upgradeMessage
+    ? null
+    : capability === "practice_session" && resumeSessionId
+      ? "practice_session_in_progress"
+      : EXHAUSTED_SOURCE[capability];
 
   return {
     code: PLAN_LIMIT_CODE,
@@ -112,6 +134,7 @@ export function planLimitNotice(input: {
     upgradeMessage,
     upgradeHref: upgradeSource ? upgradeHref(upgradeSource) : PLANS_PATH,
     upgradeSource,
+    ...(resumeSessionId ? { resumeSessionId } : {}),
   };
 }
 

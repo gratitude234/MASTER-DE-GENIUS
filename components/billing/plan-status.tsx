@@ -54,9 +54,18 @@ export function PlanRailCard({ plan }: { plan: PlanBadge | null }) {
   );
 }
 
-/** Routes where the strip would compete with the task or repeat the page itself. */
+/**
+ * Routes where the strip would compete with the task or repeat the page itself.
+ *
+ * `/home` is on this list deliberately. The dashboard carries its own upgrade
+ * button in the header and the compact Free plan card lower down; a strip above
+ * both would be the third prompt on one screen, which is what this redesign set
+ * out to remove. Every other page keeps it, so the upgrade path is still one tap
+ * away from anywhere on a phone.
+ */
 function hideStrip(pathname: string) {
-  return pathname.startsWith("/practice/session/")
+  return pathname === "/home"
+    || pathname.startsWith("/practice/session/")
     || pathname.startsWith("/pricing")
     || pathname.startsWith("/billing");
 }

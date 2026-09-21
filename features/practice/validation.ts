@@ -1,3 +1,4 @@
+import { PRACTICE_MAX_QUESTIONS } from "@/features/billing/plans";
 import type { CreatePracticeSessionInput, PracticeMode } from "@/features/practice/types";
 import type { QuestionDifficulty, QuestionOption } from "@/types/domain";
 
@@ -33,8 +34,15 @@ export function parseCreatePracticeSessionInput(value: unknown): CreatePracticeS
   if (!mode || !MODES.has(mode)) {
     throw new Error("Choose a valid practice mode.");
   }
-  if (!Number.isInteger(count) || count < 1 || count > 40) {
-    throw new Error("Practice sessions can contain between 1 and 40 questions.");
+  /*
+   * The absolute ceiling, not this student's. The plan's own
+   * `maxQuestionsPerSession` clamps the request on the server afterwards, so a
+   * Free request for 40 builds the 20 the plan allows rather than being
+   * refused — validation is about a well-formed request, not about what this
+   * particular student is entitled to.
+   */
+  if (!Number.isInteger(count) || count < 1 || count > PRACTICE_MAX_QUESTIONS) {
+    throw new Error(`Practice sessions can contain between 1 and ${PRACTICE_MAX_QUESTIONS} questions.`);
   }
 
   let difficulty: QuestionDifficulty | null = null;

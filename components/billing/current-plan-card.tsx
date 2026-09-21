@@ -92,9 +92,10 @@ export function CurrentPlanCard({ entitlement }: { entitlement: Entitlement }) {
         </p>
       )}
 
-      <dl className="mt-5 grid grid-cols-3 gap-2.5">
+      <dl className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         {[
-          { label: limits.practice.unit === "question" ? "Questions / day" : "Practice sessions / day", value: limits.practice.perDay },
+          { label: "Practice sessions / day", value: limits.practice.sessionsPerDay },
+          { label: "Questions / session", value: limits.practice.maxQuestionsPerSession },
           { label: limits.mockAttemptWindow === "day" ? "Mocks / day" : "Mocks / month", value: limits.mockAttempts },
           { label: "MASTER AI / day", value: limits.aiExplanationsPerDay },
         ].map((item) => (

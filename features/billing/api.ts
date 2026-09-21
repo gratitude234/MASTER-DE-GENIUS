@@ -3,7 +3,8 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { planLimitNotice, planLimitText, type LimitedCapability } from "@/features/billing/limit-notice";
-import type { PracticeMeter, PracticeQuestionAllowance, QuotaReservation } from "@/features/billing/quota";
+import type { ActivePracticeSession } from "@/features/billing/usage-types";
+import type { QuotaReservation } from "@/features/billing/quota";
 
 /**
  * The one shape a plan limit takes on the wire.
@@ -20,6 +21,8 @@ export function planLimitResponse(
   capability: LimitedCapability,
   reservation: Pick<QuotaReservation, "tier" | "limit" | "window">,
   extra: Record<string, unknown> = {},
+  /** The practice session the student may resume instead. See planLimitNotice. */
+  resumeSessionId: string | null = null,
 ): NextResponse {
   const notice = planLimitNotice({
     capability,
@@ -27,6 +30,7 @@ export function planLimitResponse(
     limit: reservation.limit,
     resetAt: reservation.window.resetAt,
     windowKind: reservation.window.kind,
+    resumeSessionId,
   });
 
   return NextResponse.json(
@@ -36,13 +40,21 @@ export function planLimitResponse(
 }
 
 /**
- * The Free practice-question allowance, refused. `allowance` is included when
- * known so the browser can redraw the counts without a second request.
+ * A new practice session was refused because today's allowance is spent.
+ *
+ * `activeSession` is the session the student already has open, when there is
+ * one. Included in the body so the browser can offer Resume without a second
+ * request — the difference between "come back tomorrow" and "you are already
+ * in it".
  */
-export function practiceLimitResponse(meter: PracticeMeter, allowance?: PracticeQuestionAllowance): NextResponse {
+export function practiceSessionLimitResponse(
+  reservation: Pick<QuotaReservation, "tier" | "limit" | "window">,
+  activeSession: ActivePracticeSession | null,
+): NextResponse {
   return planLimitResponse(
-    "practice_question",
-    { tier: meter.tier, limit: meter.limit, window: { key: meter.dayKey, kind: "day", resetAt: meter.resetAt } },
-    allowance ? { allowance } : {},
+    "practice_session",
+    reservation,
+    activeSession ? { activeSession } : {},
+    activeSession?.id ?? null,
   );
 }

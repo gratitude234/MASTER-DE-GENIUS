@@ -1,4 +1,4 @@
-import type { BillingTier, PracticeAllowanceUnit } from "@/features/billing/plans";
+import type { BillingTier } from "@/features/billing/plans";
 
 /**
  * The one shape every screen reads a student's allowance from.
@@ -17,13 +17,26 @@ export interface UsageMeter {
   window: "day" | "month";
 }
 
+/**
+ * Practice, which is counted in **new sessions per day**, account-wide.
+ *
+ * `activeSession` is what makes "used" readable to a student: a Free student
+ * whose one session is still running has not lost anything, and the screen must
+ * say "in progress · Resume" rather than "used". It is null when no practice
+ * session is unfinished, and null (not absent) when it could not be read.
+ */
 export interface PracticeUsage extends UsageMeter {
-  /** Free counts questions; Master counts sessions. */
-  unit: PracticeAllowanceUnit;
-  /** Questions already held in an unfinished session (question unit only). */
-  waiting: number | null;
-  /** The largest new session that may be started now (question unit only). */
-  available: number | null;
+  /** The largest paper this plan may build, from the plan configuration. */
+  maxQuestionsPerSession: number;
+  activeSession: ActivePracticeSession | null;
+}
+
+/** An unfinished practice session, whichever exam it belongs to. */
+export interface ActivePracticeSession {
+  id: string;
+  subjectName: string;
+  answeredCount: number;
+  questionCount: number;
 }
 
 export interface UsageSummary {
@@ -34,19 +47,6 @@ export interface UsageSummary {
   practice: PracticeUsage;
   mocks: UsageMeter;
   aiExplanations: UsageMeter;
-}
-
-/** The server's answer to "how many practice questions do I have?" (Free). */
-export interface PracticeQuestionAllowance {
-  limit: number;
-  /** Answered today, plus today's questions left unanswered in a finished session. */
-  used: number;
-  /** Held questions still answerable in an unfinished session. */
-  waiting: number;
-  /** How many more questions can be answered today. */
-  remaining: number;
-  /** The largest new session that may be started now. */
-  available: number;
 }
 
 /** The subset the persistent shell needs: enough to choose a CTA or a badge. */
