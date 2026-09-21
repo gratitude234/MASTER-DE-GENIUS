@@ -293,6 +293,34 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["ai_daily_usage"]["Insert"]>;
         Relationships: [];
       };
+      ai_explanation_receipts: {
+        Row: { user_id: string; cache_key: string; created_at: string };
+        Insert: { user_id: string; cache_key: string; created_at?: string };
+        Update: Partial<Database["public"]["Tables"]["ai_explanation_receipts"]["Insert"]>;
+        Relationships: [];
+      };
+      practice_question_usage: {
+        Row: {
+          session_question_id: string;
+          user_id: string;
+          session_id: string;
+          window_key: string;
+          state: "held" | "used";
+          created_at: string;
+          used_at: string | null;
+        };
+        Insert: {
+          session_question_id: string;
+          user_id: string;
+          session_id: string;
+          window_key: string;
+          state: "held" | "used";
+          created_at?: string;
+          used_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["practice_question_usage"]["Insert"]>;
+        Relationships: [];
+      };
       ai_usage: {
         Row: {
           id: number;
@@ -1333,6 +1361,53 @@ export type Database = {
       save_response_v2: {
         Args: { p_user_id: string; p_kind: string; p_session_id: string; p_question_id: string; p_selected_option_key: string | null; p_is_flagged: boolean; p_expected_revision: number; p_mutation_id: string };
         Returns: Json;
+      };
+      save_metered_practice_response: {
+        Args: {
+          p_user_id: string;
+          p_session_id: string;
+          p_question_id: string;
+          p_selected_option_key: string;
+          p_expected_revision: number;
+          p_mutation_id: string;
+          p_day_key: string;
+          p_limit: number;
+        };
+        Returns: Json;
+      };
+      create_metered_practice_session: {
+        Args: {
+          p_user_id: string;
+          p_exam_body_id: string;
+          p_subject_id: string;
+          p_topic_id: string | null;
+          p_mode: Database["public"]["Enums"]["practice_mode"];
+          p_difficulty: Database["public"]["Enums"]["question_difficulty"] | null;
+          p_year_filter: number | null;
+          p_requested_count: number;
+          p_provider: string;
+          p_duration_seconds: number | null;
+          p_questions: Json;
+          p_day_key: string;
+          p_limit: number;
+        };
+        Returns: string;
+      };
+      practice_question_allowance: {
+        Args: { p_user_id: string; p_day_key: string; p_limit: number };
+        Returns: { allowance: number; used: number; waiting: number; remaining: number; available: number }[];
+      };
+      product_quota_usage: {
+        Args: { p_user_id: string; p_capability: "practice_session" | "mock_attempt"; p_window_key: string };
+        Returns: number;
+      };
+      ai_quota_usage: {
+        Args: { p_user_id: string; p_feature: "question_explanation" };
+        Returns: number;
+      };
+      product_quota_day: {
+        Args: { p_at?: string };
+        Returns: string;
       };
 
       create_exam_attempt: {

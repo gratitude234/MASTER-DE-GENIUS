@@ -2,6 +2,16 @@ import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
 import { getRevisions } from "@/features/offline/server";
 
+import {
+  isPracticeLimitError,
+  PracticeAllowanceExhausted,
+  readHeldPracticeQuestions,
+  readPracticeAllowance,
+  toPracticeAllowance,
+  type PracticeMeter,
+} from "@/features/billing/quota";
+import type { PracticeQuestionAllowance } from "@/features/billing/usage-types";
+import { lockBeyondAllowance } from "@/features/practice/allowance";
 import { toStudentQuestion } from "@/features/questions/delivery";
 import { fetchCanonicalQuestions, resolveQuestionProviderId } from "@/features/questions/service";
 import type { StudentQuestion } from "@/features/questions/types";
@@ -10,6 +20,7 @@ import type {
   CreatePracticeSessionInput,
   PracticeFeedback,
   PracticeMode,
+  PracticeSessionQuestionView,
   PracticeSessionView,
   SavePracticeAnswerResult,
 } from "@/features/practice/types";
@@ -101,6 +112,13 @@ async function resolvePracticeScope(userId: string, input: CreatePracticeSession
 export async function createPracticeSessionForUser(
   userId: string,
   input: CreatePracticeSessionInput,
+  /**
+   * Present when the student's plan counts practice questions. The session is
+   * then built by `create_metered_practice_session`, which refuses — under the
+   * ledger lock — any paper larger than what is left, and holds every question
+   * it creates. Absent: the unchanged path.
+   */
+  meter: PracticeMeter | null = null,
 ): Promise<{ sessionId: string; questionCount: number; requestedCount: number }> {
   await assertOnboardedUser(userId);
   const scope = await resolvePracticeScope(userId, input);
@@ -138,7 +156,7 @@ export async function createPracticeSessionForUser(
 
   const admin = createAdminClient();
   const durationSeconds = input.mode === "timed" ? questions.length * TIMED_SECONDS_PER_QUESTION : null;
-  const { data, error } = await admin.rpc("create_practice_session", {
+  const args = {
     p_user_id: userId,
     p_exam_body_id: scope.exam.id,
     p_subject_id: scope.subject.id,
@@ -150,13 +168,22 @@ export async function createPracticeSessionForUser(
     p_provider: provider,
     p_duration_seconds: durationSeconds,
     p_questions: toJson(payload),
-  });
+  };
+  const { data, error } = meter
+    ? await admin.rpc("create_metered_practice_session", { ...args, p_day_key: meter.dayKey, p_limit: meter.limit })
+    : await admin.rpc("create_practice_session", args);
 
+  if (error && meter && isPracticeLimitError(error.message)) throw new PracticeAllowanceExhausted(meter);
   if (error || !data) throw new Error(`Could not create practice session: ${error?.message ?? "unknown error"}`);
   return { sessionId: data, questionCount: questions.length, requestedCount: input.count };
 }
 
-export async function loadPracticeSessionForUser(userId: string, sessionId: string): Promise<PracticeSessionView | null> {
+export async function loadPracticeSessionForUser(
+  userId: string,
+  sessionId: string,
+  /** Present on a question-counted plan: unanswered questions beyond today's allowance are withheld. */
+  meter: PracticeMeter | null = null,
+): Promise<PracticeSessionView | null> {
   const admin = createAdminClient();
   const { data: session, error: sessionError } = await admin
     .from("practice_sessions")
@@ -194,7 +221,7 @@ export async function loadPracticeSessionForUser(userId: string, sessionId: stri
   );
   const revealFeedback = typedSession.mode === "practice" || typedSession.status === "completed";
 
-  const questions = ((questionRows ?? []) as SessionQuestionRow[]).map((row) => {
+  const allQuestions = ((questionRows ?? []) as SessionQuestionRow[]).map((row) => {
     const answer = answersByQuestion.get(row.id);
     let feedback: PracticeFeedback | null = null;
     if (answer && revealFeedback) {
@@ -214,6 +241,25 @@ export async function loadPracticeSessionForUser(userId: string, sessionId: stri
       feedback,
     };
   });
+
+  /*
+   * Delivery gate for question-counted plans. Only an answerable session is
+   * gated: a finished one is reviewed on the results page, which is never
+   * restricted. An unreadable allowance withholds every question the ledger
+   * does not already hold for this student — it fails closed on delivery, and
+   * the student's own answers are still shown.
+   */
+  let questions: PracticeSessionQuestionView[] = allQuestions;
+  let practiceAllowance: PracticeQuestionAllowance | null | undefined;
+  const answerable = typedSession.status === "in_progress"
+    && (!typedSession.expires_at || Date.parse(typedSession.expires_at) > Date.now());
+  if (meter) {
+    practiceAllowance = await readPracticeAllowance(userId, meter);
+    if (answerable) {
+      const held = new Set(await readHeldPracticeQuestions(userId, sessionId));
+      questions = lockBeyondAllowance(allQuestions, held, practiceAllowance?.available ?? 0);
+    }
+  }
 
   return {
     id: typedSession.id,
@@ -244,6 +290,7 @@ export async function loadPracticeSessionForUser(userId: string, sessionId: stri
     expiresAt: typedSession.expires_at,
     completedAt: typedSession.completed_at,
     questions,
+    ...(meter ? { practiceAllowance } : {}),
   };
 }
 
@@ -253,18 +300,34 @@ export async function savePracticeAnswerForUser(
   sessionQuestionId: string,
   selectedOptionKey: QuestionOption["key"],
   expectedRevision: number, mutationId: string,
+  /**
+   * Present on a question-counted plan. The answer is then saved by
+   * `save_metered_practice_response`, which charges a first answer and writes it
+   * in one transaction — a refused charge writes nothing, a refused answer
+   * charges nothing, and a retry of the same answer is never charged twice.
+   */
+  meter: PracticeMeter | null = null,
 ): Promise<SavePracticeAnswerResult> {
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc("save_response_v2", {
-    p_kind: "practice", p_is_flagged: false, p_expected_revision: expectedRevision, p_mutation_id: mutationId,
+  const args = {
     p_user_id: userId,
     p_session_id: sessionId,
     p_question_id: sessionQuestionId,
     p_selected_option_key: selectedOptionKey,
-  });
+    p_expected_revision: expectedRevision,
+    p_mutation_id: mutationId,
+  };
+  const { data, error } = meter
+    ? await admin.rpc("save_metered_practice_response", { ...args, p_day_key: meter.dayKey, p_limit: meter.limit })
+    : await admin.rpc("save_response_v2", { ...args, p_kind: "practice", p_is_flagged: false });
 
+  if (error && meter && isPracticeLimitError(error.message)) throw new PracticeAllowanceExhausted(meter);
   if (error) throw new Error(error.message);
-  const result = data as unknown as Database["public"]["Functions"]["save_practice_answer"]["Returns"][number] & { revision: number; mutation_id: string };
+  const result = data as unknown as Database["public"]["Functions"]["save_practice_answer"]["Returns"][number] & {
+    revision: number;
+    mutation_id: string;
+    allowance?: Record<string, number>;
+  };
   if (!result) throw new Error("The answer could not be saved.");
 
   const response: SavePracticeAnswerResult = {
@@ -281,6 +344,8 @@ export async function savePracticeAnswerForUser(
       explanation: result.explanation,
     };
   }
+
+  if (meter && result.allowance) response.allowance = toPracticeAllowance(result.allowance);
 
   return response;
 }

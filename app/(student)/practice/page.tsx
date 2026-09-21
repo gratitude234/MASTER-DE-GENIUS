@@ -1,4 +1,5 @@
 import { PracticeSetup, type PracticeTab } from "@/components/practice/practice-setup";
+import { getUsageSummary } from "@/features/billing/usage";
 import { recommendPractice, type PracticeRecommendation } from "@/features/home/recommendation";
 import { getPracticeCatalog } from "@/features/questions/catalog";
 import { getPracticeFilterCapabilitiesBySubject, unavailableSubjectSlugs } from "@/features/questions/service";
@@ -17,9 +18,13 @@ export default async function PracticePage({
   const prefillFromRecommendation = params.quick === "1";
 
   const { user } = await requireOnboardedUser();
-  const [catalog, activeSession] = await Promise.all([
+  const [catalog, activeSession, usage] = await Promise.all([
     getPracticeCatalog(),
     getLatestActivePracticeSessionForUser(user.id),
+    // Every practice entry point — this tab and Past Questions — reads the same
+    // account-wide allowance. The setup screen only displays it and sizes the
+    // offer; the session route enforces it.
+    getUsageSummary(user.id),
   ]);
 
   /*
@@ -56,6 +61,7 @@ export default async function PracticePage({
       subjectCapabilities={capabilities.bySubject}
       unavailableSubjects={unavailableSubjects}
       resumeSession={activeSession}
+      practiceAllowance={usage.practice.unit === "question" ? usage.practice : null}
       recommendation={recommendation}
       prefillFromRecommendation={prefillFromRecommendation}
       initialMode={params.timed === "1" ? "timed" : "practice"}

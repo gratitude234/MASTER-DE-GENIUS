@@ -202,10 +202,44 @@ async function releaseClaim(cacheKey: string): Promise<void> {
   }
 }
 
-function secondsUntilUtcMidnight(): number {
-  const now = new Date();
-  const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return Math.max(1, Math.ceil((midnight - now.getTime()) / 1000));
+/*
+ * Receipts: which explanations this student has already been given.
+ *
+ * The shared cache forgets an explanation after 48 hours. A student reopening
+ * one they already received — yesterday's, or last week's — must not pay for it
+ * again, and must not be refused it because today's allowance is spent. A
+ * receipt makes regenerating that same explanation free for them. Best-effort
+ * both ways: a missing receipt costs at most one charge, never an explanation.
+ */
+async function hasReceipt(userId: string, cacheKey: string): Promise<boolean> {
+  try {
+    const { data, error } = await createAdminClient()
+      .from("ai_explanation_receipts")
+      .select("cache_key")
+      .eq("user_id", userId)
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+    if (error) console.error("[ai] receipt lookup failed", { code: error.code });
+    return Boolean(data);
+  } catch {
+    console.error("[ai] receipt lookup failed");
+    return false;
+  }
+}
+
+async function recordReceipt(userId: string, cacheKey: string): Promise<void> {
+  try {
+    const { error } = await createAdminClient()
+      .from("ai_explanation_receipts")
+      .upsert({ user_id: userId, cache_key: cacheKey }, { onConflict: "user_id,cache_key", ignoreDuplicates: true });
+    if (error) console.error("[ai] receipt record failed", { code: error.code });
+  } catch {
+    console.error("[ai] receipt record failed");
+  }
+}
+
+function secondsUntilReset(): number {
+  return Math.max(1, Math.ceil((quotaWindow("day").resetAt.getTime() - Date.now()) / 1000));
 }
 
 export async function explainQuestionForUser(userId: string, request: ExplanationRequest): Promise<ExplanationResponse> {
@@ -263,6 +297,7 @@ export async function explainQuestionForUser(userId: string, request: Explanatio
   if (claim.outcome === "completed" && claim.content) {
     const explanation = parseGeminiExplanation(claim.content);
     await recordAiUsage({ userId, explanationType: request.explanationType, model, cacheHit: true, durationMs: 0, status: "ok" });
+    await recordReceipt(userId, cacheKey);
     return { explanation, cached: true, remainingToday: null };
   }
   if (claim.outcome === "in_progress") {
@@ -276,39 +311,44 @@ export async function explainQuestionForUser(userId: string, request: Explanatio
   }
 
   /*
-   * The allowance is a plan entitlement, resolved on the server: three a day on
-   * Free, twenty on Master. Only generation is counted — the cache hit above
-   * returned before reaching here, so a reused explanation still costs nothing,
-   * exactly as it did before plans existed.
+   * The allowance is a plan entitlement, resolved on the server: two a day on
+   * Free, twenty on Master, on the Lagos calendar. Only a *new* explanation is
+   * counted — the cache hit above returned before reaching here, and an
+   * explanation this student has already been given (a receipt) regenerates
+   * without a charge.
    */
   const entitlement = await getEntitlement(userId);
   const dailyLimit = entitlement.limits.aiExplanationsPerDay;
-  const { data: quotaRows, error: quotaError } = await db.rpc("consume_ai_daily_quota", {
-    p_user_id: userId,
-    p_feature: "question_explanation",
-    p_limit: dailyLimit,
-  });
-  const quota = quotaRows?.[0];
-  if (quotaError || !quota) {
-    await releaseClaim(cacheKey);
-    throw new AiExplanationError("QUOTA_UNAVAILABLE", 503, "MASTER AI is unavailable right now. Please try again shortly.");
-  }
-  if (!quota.allowed) {
-    await releaseClaim(cacheKey);
-    const notice = planLimitNotice({
-      capability: "ai_explanation",
-      tier: entitlement.tier,
-      limit: dailyLimit,
-      resetAt: quotaWindow("day").resetAt,
-      windowKind: "day",
+  const reopened = await hasReceipt(userId, cacheKey);
+  let quota: { allowed: boolean; remaining: number } | null = null;
+  if (!reopened) {
+    const { data: quotaRows, error: quotaError } = await db.rpc("consume_ai_daily_quota", {
+      p_user_id: userId,
+      p_feature: "question_explanation",
+      p_limit: dailyLimit,
     });
-    throw new AiExplanationError(
-      notice.code,
-      402,
-      planLimitText(notice),
-      secondsUntilUtcMidnight(),
-      notice,
-    );
+    quota = quotaRows?.[0] ?? null;
+    if (quotaError || !quota) {
+      await releaseClaim(cacheKey);
+      throw new AiExplanationError("QUOTA_UNAVAILABLE", 503, "MASTER AI is unavailable right now. Please try again shortly.");
+    }
+    if (!quota.allowed) {
+      await releaseClaim(cacheKey);
+      const notice = planLimitNotice({
+        capability: "ai_explanation",
+        tier: entitlement.tier,
+        limit: dailyLimit,
+        resetAt: quotaWindow("day").resetAt,
+        windowKind: "day",
+      });
+      throw new AiExplanationError(
+        notice.code,
+        402,
+        planLimitText(notice),
+        secondsUntilReset(),
+        notice,
+      );
+    }
   }
 
   const started = Date.now();
@@ -334,11 +374,13 @@ export async function explainQuestionForUser(userId: string, request: Explanatio
       durationMs: Date.now() - started,
       status: "ok",
     });
-    return { explanation, cached: false, remainingToday: quota.remaining };
+    await recordReceipt(userId, cacheKey);
+    return { explanation, cached: false, remainingToday: quota ? quota.remaining : null };
   } catch (error) {
     await releaseClaim(cacheKey);
-    // Nothing was produced, so the reserved generation goes back.
-    await refundDailyQuota(userId);
+    // Nothing was produced, so the reserved generation goes back — if one was
+    // taken at all: a reopened explanation was never charged.
+    if (quota) await refundDailyQuota(userId);
     const category = error instanceof GeminiExplanationError ? error.category : "internal";
 
     /*

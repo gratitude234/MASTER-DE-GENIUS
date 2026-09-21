@@ -5,7 +5,9 @@ import { CreditCard } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
+import { track } from "@/features/analytics/events";
 import type { BillingPlan } from "@/features/billing/plans";
+import type { UpgradeSource } from "@/features/billing/upgrade";
 
 interface CheckoutButtonProps {
   plan: BillingPlan;
@@ -14,6 +16,8 @@ interface CheckoutButtonProps {
   /** Set while any card on the page is initializing, so only one can run. */
   busy: boolean;
   onBusyChange: (busy: boolean) => void;
+  /** The upgrade prompt that led here. Analytics only — never sent to checkout. */
+  source?: UpgradeSource | null;
 }
 
 /**
@@ -29,12 +33,13 @@ interface CheckoutButtonProps {
  * answers, so keyboard users get the same behaviour and focus handling as
  * everyone else.
  */
-export function CheckoutButton({ plan, label, variant = "primary", busy, onBusyChange }: CheckoutButtonProps) {
+export function CheckoutButton({ plan, label, variant = "primary", busy, onBusyChange, source = null }: CheckoutButtonProps) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const start = async () => {
     if (busy || starting) return;
+    track("upgrade_checkout_started", { plan: plan.slug, source: source ?? "direct" });
     setStarting(true);
     onBusyChange(true);
     setError(null);

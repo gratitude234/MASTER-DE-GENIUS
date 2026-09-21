@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getEntitlement } from "@/features/billing/entitlements";
+import { practiceMeterFor } from "@/features/billing/quota";
 import { requireExamApiUser } from "@/features/exams/api";
 import { loadExamAttemptForUser } from "@/features/exams/service";
 import { loadPracticeSessionForUser } from "@/features/practice/service";
@@ -8,7 +10,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ kin
   const { kind, id } = await params;
   if (kind !== "exam" && kind !== "practice") return NextResponse.json({ error: "Not found." }, { status: 404 });
   try {
-    const view = kind === "exam" ? await loadExamAttemptForUser(user.id, id) : await loadPracticeSessionForUser(user.id, id);
+    // The offline copy is a delivery path like any other: a free student's
+    // practice view is gated by the same allowance as the session page.
+    const view = kind === "exam"
+      ? await loadExamAttemptForUser(user.id, id)
+      : await loadPracticeSessionForUser(user.id, id, practiceMeterFor(await getEntitlement(user.id)));
     if (!view) return NextResponse.json({ error: "Not found." }, { status: 404 });
     return NextResponse.json({ view }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return NextResponse.json({ error: "Could not load saved session." }, { status: 503 }); }

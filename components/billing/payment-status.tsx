@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, Clock3, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,17 @@ export function PaymentStatus({ initial }: PaymentStatusProps) {
   const [error, setError] = useState<string | null>(null);
   // Survives re-renders so an in-flight check is never started twice.
   const inFlight = useRef(false);
+  const router = useRouter();
+
+  /*
+   * The student shell (the "Upgrade to Master" prompt, the plan badge) was
+   * rendered before this payment settled. Once the server confirms Master, the
+   * shared layout is re-rendered so every screen reflects it at once — no
+   * sign-out, no reload, and no stale "Upgrade" button on the next page.
+   */
+  useEffect(() => {
+    if (result.state === "success" && initial.state !== "success") router.refresh();
+  }, [result.state, initial.state, router]);
 
   const check = useCallback(async () => {
     if (inFlight.current) return;

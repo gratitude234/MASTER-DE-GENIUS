@@ -39,6 +39,7 @@ registerHooks({
     if (specifier === '@/features/offline/storage') {
       return stub(`export async function readRecord(){ return null; } export async function writeRecord(){}`);
     }
+    if (specifier === "@/features/billing/usage") return { url: new URL("./stubs/billing-usage.mjs", import.meta.url).href, shortCircuit: true };
     return next(specifier, context);
   },
 });
@@ -301,4 +302,42 @@ test('the exam error screen reassures without promising anything about state', (
   assert.ok(markup.includes('every answer already saved are untouched'));
   assert.ok(markup.includes('href="/home"'));
   assert.ok(!markup.includes('boom'));
+});
+
+// ─────────────────────────────────────── Free plan v2: conversion without hostage
+
+const { freeUsage } = await import('./stubs/billing-usage.mjs');
+
+test('50. a Free result shows the whole result first, then a conversion card that hides nothing', async () => {
+  globalThis.__usage = freeUsage();
+  try {
+    const markup = await renderResult(fullMock);
+    const score = markup.indexOf('Subject breakdown');
+    const card = markup.indexOf('Want more practice on your weak areas?');
+    assert.ok(score > 0 && card > score, 'the card comes after the score and breakdown');
+    assert.ok(markup.includes('Upgrade to Master for more practice, mocks and MASTER AI.'));
+    assert.ok(markup.includes('href="/pricing?source=results#plans"'));
+    assert.ok(markup.includes('Answer review'), 'every answer is still reviewable on Free');
+    assert.ok(!/role="dialog"|aria-modal/.test(markup), 'never a modal over the result');
+  } finally {
+    globalThis.__usage = undefined;
+  }
+});
+
+test('a Master result carries no conversion card', async () => {
+  const markup = await renderResult(fullMock);
+  assert.ok(!markup.includes('Want more practice on your weak areas?'));
+  assert.ok(!markup.includes('Upgrade to Master'));
+});
+
+test('11. the mistake bank stays fully readable on Free, with one quiet Master link', async () => {
+  globalThis.__usage = freeUsage({ practice: { used: 4 } });
+  try {
+    const markup = await renderMistakes([fullMock]);
+    assert.ok(markup.includes('Review answer &amp; explanation'), 'old mistakes are not locked away');
+    assert.equal((markup.match(/href="\/pricing\?source=mistakes#plans"/g) ?? []).length, 1);
+    assert.ok(markup.includes('uses your free practice questions for today'), 'practising them is honestly described');
+  } finally {
+    globalThis.__usage = undefined;
+  }
 });

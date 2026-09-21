@@ -23,6 +23,12 @@ export const ANALYTICS_EVENTS = [
   "class_whatsapp_clicked",
   "class_lead_status_changed",
   "class_lead_enrolled",
+  // Free-to-Master conversion. The only property is `source` (and `plan` at
+  // checkout) — a fixed identifier naming which prompt was used, never the
+  // student, their scores or their usage.
+  "upgrade_cta_clicked",
+  "upgrade_pricing_viewed",
+  "upgrade_checkout_started",
 ] as const;
 
 export type AnalyticsEvent = (typeof ANALYTICS_EVENTS)[number];

@@ -14,9 +14,12 @@ import {
   type BillingPlan,
   type BillingTier,
 } from "@/features/billing/plans";
+import { PLANS_ANCHOR, type UpgradeSource } from "@/features/billing/upgrade";
 import { cn } from "@/lib/utils";
 
 interface PricingPlansProps {
+  /** Which upgrade prompt sent the student here, for attribution only. */
+  source?: UpgradeSource | null;
   currentTier: BillingTier;
   /** The active Master plan slug, when one is running. */
   currentPlanSlug: string | null;
@@ -52,7 +55,7 @@ function BenefitList({ items, inverse = false }: { items: readonly string[]; inv
  * re-prices — editing this component's state in devtools changes what is drawn
  * and nothing else.
  */
-export function PricingPlans({ currentTier, currentPlanSlug, expiryLabel }: PricingPlansProps) {
+export function PricingPlans({ currentTier, currentPlanSlug, expiryLabel, source = null }: PricingPlansProps) {
   const [busy, setBusy] = useState(false);
 
   const free = BILLING_PLANS.find((plan) => plan.tier === "free")!;
@@ -122,7 +125,11 @@ export function PricingPlans({ currentTier, currentPlanSlug, expiryLabel }: Pric
         </section>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-3">
+      {/*
+        Every "Upgrade to Master" in the product lands here (#plans): the cards
+        that actually sell, not the page above them.
+      */}
+      <div id={PLANS_ANCHOR} className="grid scroll-mt-6 gap-3 lg:grid-cols-3">
         {paid.map((plan) => (
           <PlanCard
             key={plan.slug}
@@ -131,6 +138,7 @@ export function PricingPlans({ currentTier, currentPlanSlug, expiryLabel }: Pric
             isMaster={isMaster}
             busy={busy}
             onBusyChange={setBusy}
+            source={source}
           />
         ))}
       </div>
@@ -176,12 +184,14 @@ function PlanCard({
   isMaster,
   busy,
   onBusyChange,
+  source,
 }: {
   plan: BillingPlan;
   isCurrent: boolean;
   isMaster: boolean;
   busy: boolean;
   onBusyChange: (busy: boolean) => void;
+  source: UpgradeSource | null;
 }) {
   const perDay = pricePerDayLabel(plan);
   const headingId = `plan-${plan.slug}`;
@@ -218,6 +228,7 @@ function PlanCard({
           plan={plan}
           busy={busy}
           onBusyChange={onBusyChange}
+          source={source}
           variant={plan.isPopular ? "dark" : "primary"}
           // "Master Monthly" is 30 days of access bought once. It is never
           // described as a subscription, because nothing renews on its own.

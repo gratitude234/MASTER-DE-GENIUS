@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Compass } from "lucide-react";
 import { ActiveExamCard } from "@/components/home/active-exam-card";
+import { FreePlanCard } from "@/components/billing/free-plan-card";
+import { getUsageSummary } from "@/features/billing/usage";
 import { HomeHeader } from "@/components/home/home-header";
 import { LatestMockCard, LatestMockEmptyCard } from "@/components/home/latest-mock-card";
 import { MistakesCard } from "@/components/home/mistakes-card";
@@ -25,7 +27,7 @@ export default async function HomePage() {
   const { user, profile, preference, examBody } = await getStudentProfile();
   // Expiry submission happens before reading history, so newly finished mocks appear immediately.
   const activeExam = await getActiveExamAttemptSummaryForUser(user.id, preference?.exam_body_id);
-  const history = await loadHistory(user.id);
+  const [history, usage] = await Promise.all([loadHistory(user.id), getUsageSummary(user.id)]);
 
   const preparations = await getStudentExamPreferences(await createClient(), user.id);
   const examBodyId = preference?.exam_body_id;
@@ -63,6 +65,9 @@ export default async function HomePage() {
       */}
       <HomeHeader name={firstName} examLabel={examLabel} />
       {preparations.length > 1 ? <p className="text-sm text-slate-600">You’re preparing for {preparations.map(item => item.exam.short_name).join(" & ")}. Showing {examBody?.short_name} progress.</p> : null}
+
+      {/* Free only: what today allows, what is left, and one tap to Master. */}
+      {usage.isMaster ? null : <FreePlanCard usage={usage} />}
 
       {activeExam ? <ActiveExamCard attempt={activeExam} /> : null}
 

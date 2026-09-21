@@ -1,5 +1,11 @@
 import { resolveActiveExamContext } from "@/features/exam-context/service";
 import "server-only";
+import {
+  isPracticeLimitError,
+  PracticeAllowanceExhausted,
+  readPracticeAllowance,
+  type PracticeMeter,
+} from "@/features/billing/quota";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { grade, mistakeBank, outcome, type LearningResult, type ResultKind, type ReviewItem } from "./grading";
 import type { StudentQuestion } from "@/features/questions/types";
@@ -90,7 +96,17 @@ export interface RevisionInput {
   topicSlug?: string;
   mistakes?: boolean;
 }
-export async function startRevision(userId: string, input: RevisionInput): Promise<string> {
+export async function startRevision(
+  userId: string,
+  input: RevisionInput,
+  /**
+   * Present on a question-counted plan. A revision session is a new attempt at
+   * each question, so it is sized to what is left and holds its questions like
+   * any other practice session. Viewing results and the mistake bank is never
+   * metered — only practising from them.
+   */
+  meter: PracticeMeter | null = null,
+): Promise<string> {
   let items: ReviewItem[];
   let examBodyId: string;
   if (input.mistakes) {
@@ -111,6 +127,12 @@ export async function startRevision(userId: string, input: RevisionInput): Promi
       .sort((a, b) => Number(a.outcome === "correct") - Number(b.outcome === "correct")).slice(0, 20);
   }
   if (!items.length) throw new Error("No questions are available for this revision.");
+  if (meter) {
+    const allowance = await readPracticeAllowance(userId, meter);
+    if (!allowance) throw new Error("Practice is unavailable right now. Please try again shortly.");
+    if (allowance.available < 1) throw new PracticeAllowanceExhausted(meter);
+    items = items.slice(0, allowance.available);
+  }
   const db = createAdminClient();
   const { data: subject, error: subjectError } = await db.from("subjects").select("id").eq("slug", input.subjectSlug).single();
   if (subjectError || !subject) throw new Error("Subject is unavailable.");
@@ -125,11 +147,15 @@ export async function startRevision(userId: string, input: RevisionInput): Promi
     sourceQuestionId: i.question.source.providerQuestionId,
     internalQuestionId: i.question.source.internalQuestionId ?? null,
     studentSnapshot: i.question, correctOptionKey: i.correct, explanation: i.explanation }));
-  const { data, error } = await db.rpc("create_practice_session", {
+  const args = {
     p_user_id: userId, p_exam_body_id: examBodyId, p_subject_id: subject.id, p_topic_id: topicId,
-    p_mode: "practice", p_difficulty: null, p_year_filter: null, p_requested_count: items.length,
+    p_mode: "practice" as const, p_difficulty: null, p_year_filter: null, p_requested_count: items.length,
     p_provider: "revision", p_duration_seconds: null, p_questions: JSON.parse(JSON.stringify(payload)) as Json,
-  });
+  };
+  const { data, error } = meter
+    ? await db.rpc("create_metered_practice_session", { ...args, p_day_key: meter.dayKey, p_limit: meter.limit })
+    : await db.rpc("create_practice_session", args);
+  if (error && meter && isPracticeLimitError(error.message)) throw new PracticeAllowanceExhausted(meter);
   if (error || !data) throw new Error("Could not start revision. Please try again.");
   return data;
 }

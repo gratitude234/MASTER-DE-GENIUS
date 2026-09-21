@@ -4,7 +4,10 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Clock3, FileCheck2, Flag, RefreshCcw, ShieldCheck } from "lucide-react";
 
+import { AllowanceNotice } from "@/components/billing/allowance-notice";
 import { UpgradePrompt } from "@/components/billing/upgrade-prompt";
+import { MOCK_ONE_REMAINING, mockExhausted, mockRemainingLine, resetPhrase } from "@/features/billing/copy";
+import type { UsageMeter } from "@/features/billing/usage-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
@@ -15,6 +18,11 @@ import { cn } from "@/lib/utils";
 
 interface MockExamSetupProps {
   setup: MockExamSetup;
+  /**
+   * The Free mock allowance from the server's usage summary; null on Master.
+   * Shown before the student commits. The attempt route enforces it.
+   */
+  mockAllowance?: UsageMeter | null;
 }
 
 function formatDuration(seconds: number) {
@@ -32,7 +40,10 @@ function remainingLabel(expiresAt: string) {
   return hours > 0 ? `${hours}h ${minutes}m remaining` : `${Math.max(1, minutes)}m remaining`;
 }
 
-export function MockExamSetup({ setup }: MockExamSetupProps) {
+export function MockExamSetup({ setup, mockAllowance = null }: MockExamSetupProps) {
+  const freeRemaining = mockAllowance?.remaining ?? null;
+  // A paper in progress is always resumable; only a *new* attempt needs one left.
+  const blockedByAllowance = freeRemaining === 0 && !setup.activeAttempt;
   const router = useRouter();
   const [acknowledged, setAcknowledged] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -54,7 +65,7 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
   ], [setup.durationSeconds]);
 
   const startExam = async () => {
-    if (!acknowledged || starting || !canBuildPaper) return;
+    if (!acknowledged || starting || !canBuildPaper || blockedByAllowance) return;
     setStarting(true);
     setError(null);
     setPlanLimit(null);
@@ -101,6 +112,28 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
           Practise your other subjects in the meantime — the full mock returns automatically once ready.
         </InlineAlert>
       )}
+
+      {mockAllowance && freeRemaining !== null && !setup.activeAttempt ? (
+        freeRemaining === 0 ? (
+          <AllowanceNotice
+            message={mockExhausted(mockAllowance.limit).message}
+            upgrade={mockExhausted(mockAllowance.limit).upgrade}
+            source="mock_exhausted"
+            detail={`Your free mocks reset ${resetPhrase(mockAllowance.resetAt, mockAllowance.window)}. Past results and reviews stay available.`}
+          />
+        ) : freeRemaining === 1 ? (
+          <AllowanceNotice
+            message={MOCK_ONE_REMAINING.message}
+            upgrade={MOCK_ONE_REMAINING.upgrade}
+            source="mock_one_remaining"
+          />
+        ) : (
+          <p className="text-[12.5px] text-slate-600">
+            <Badge tone="neutral" className="mr-2">Free plan</Badge>
+            {mockRemainingLine(freeRemaining, mockAllowance.limit, mockAllowance.window)}
+          </p>
+        )
+      ) : null}
 
       {setup.activeAttempt ? (
         <section className="rounded-2xl border border-brand-200 bg-brand-50 px-[18px] py-4">
@@ -199,11 +232,17 @@ export function MockExamSetup({ setup }: MockExamSetupProps) {
         size="xl"
         fullWidth
         onClick={startExam}
-        disabled={!acknowledged || !canBuildPaper || Boolean(setup.activeAttempt)}
+        disabled={!acknowledged || !canBuildPaper || Boolean(setup.activeAttempt) || blockedByAllowance}
         loading={starting}
         loadingLabel="Building your paper…"
       >
-        {setup.activeAttempt ? "Resume the active exam above" : !canBuildPaper ? "Full mock unavailable right now" : "Begin Full Mock"}
+        {setup.activeAttempt
+          ? "Resume the active exam above"
+          : !canBuildPaper
+            ? "Full mock unavailable right now"
+            : blockedByAllowance
+              ? "No free mocks left this month"
+              : "Begin Full Mock"}
       </Button>
     </div>
   );

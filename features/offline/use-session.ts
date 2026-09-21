@@ -4,6 +4,7 @@ import { DurableQueue, SyncFailure, type Ack } from "./queue";
 import { SessionClock, resumedTime } from "./clock";
 import { claimOwner, readOwner, readRecord, writeRecord } from "./storage";
 import { recordKey, type OfflineRecord, type Selection, type SessionKind, type SavedSelection } from "./types";
+import type { PracticeQuestionAllowance } from "@/features/billing/usage-types";
 import type { ExamAttemptView } from "@/features/exams/types";
 import type { PracticeSessionView } from "@/features/practice/types";
 
@@ -35,12 +36,18 @@ export function useOfflineSession(kind: SessionKind, view: ExamAttemptView | Pra
   const finalising = useRef(false);
   const [finishing, setFinishing] = useState(false);
   const [receipt, setReceipt] = useState<Record<string, unknown> | null>(null);
+  // The free practice allowance, as the server last reported it. Display only:
+  // the server decides every answer, and this never gates one locally.
+  const [allowance, setAllowance] = useState<PracticeQuestionAllowance | null>(
+    "questions" in view ? view.practiceAllowance ?? null : null,
+  );
+  const [limited, setLimited] = useState(false);
   const refresh = useCallback(() => {
     const q = queue.current;
     if (!q) return;
     setAnswers(structuredClone(q.record.answers)); setCursorState({ ...q.record.cursor });
     setPendingCount(Object.keys(q.record.pending).length);
-    setError(q.error); setCode(q.code);
+    setError(q.error); setCode(q.code); setLimited(q.limited);
   }, []);
   const flush = useCallback(async () => {
     const q = queue.current;
@@ -94,6 +101,7 @@ export function useOfflineSession(kind: SessionKind, view: ExamAttemptView | Pra
           ...(kind === "exam" ? { attemptQuestionId: questionId } : { sessionQuestionId: questionId }), ...pending,
         }) });
         if (typeof payload.serverNow === "number") clock.current?.sync(payload.serverNow);
+        if (payload.allowance && typeof payload.allowance === "object") setAllowance(payload.allowance as PracticeQuestionAllowance);
         return payload as unknown as Ack;
       }, refresh);
       queue.current = q;
@@ -187,5 +195,5 @@ export function useOfflineSession(kind: SessionKind, view: ExamAttemptView | Pra
     try { await q.retryStorage(); setReady(true); setState("saved_local"); refresh(); if (navigator.onLine) void flush(); }
     catch { refresh(); }
   }, [refresh, flush]);
-  return { retryStorage, answers, ready, state, online, error, code, secondsLeft, select, cursor, setCursor, flush, finish, finishing, receipt, pendingCount, resolveConflict };
+  return { retryStorage, answers, ready, state, online, error, code, secondsLeft, select, cursor, setCursor, flush, finish, finishing, receipt, pendingCount, resolveConflict, allowance, limited };
 }

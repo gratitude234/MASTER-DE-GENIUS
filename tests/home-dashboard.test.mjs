@@ -33,6 +33,7 @@ registerHooks({
     if (specifier === '@/features/results/service') {
       return stub(`export async function loadHistory(){ return globalThis.__history ?? []; }`);
     }
+    if (specifier === "@/features/billing/usage") return { url: new URL("./stubs/billing-usage.mjs", import.meta.url).href, shortCircuit: true };
     return next(specifier, context);
   },
 });
@@ -310,4 +311,33 @@ test('latest mock summary ignores practice sessions and reports a null first del
   assert.equal(latestMockSummary([latestMock, practice], EXAM_BODY).delta, null);
   assert.equal(latestMockSummary([previousMock, latestMock], EXAM_BODY).id, 'mock-new');
   assert.equal(latestMockSummary([previousMock, latestMock], EXAM_BODY).delta, 60);
+});
+
+// ─────────────────────────────────────────── Free plan v2: the dashboard card
+
+const { freeUsage } = await import('./stubs/billing-usage.mjs');
+
+test('43. a Free student sees their plan and today’s counts near the top of Home', async () => {
+  setState();
+  globalThis.__usage = freeUsage({ practice: { used: 1 }, mocks: { used: 1 } });
+  try {
+    const markup = await renderHome();
+    const card = markup.indexOf('Free Plan');
+    assert.ok(card > 0);
+    const progress = markup.indexOf('Your progress will appear here');
+    assert.ok(progress > 0 && card < progress, 'the card sits near the top, above the page body');
+    assert.ok(markup.includes('3 of 4 questions remaining today'));
+    assert.ok(markup.includes('1 of 2 remaining this month'));
+    assert.ok(markup.includes('2 of 2 explanations remaining today'));
+    assert.ok(markup.includes('href="/pricing?source=dashboard#plans"'));
+  } finally {
+    globalThis.__usage = undefined;
+  }
+});
+
+test('Home shows an active Master student no Free card and no upgrade prompt', async () => {
+  setState();
+  const markup = await renderHome();
+  assert.ok(!markup.includes('Free Plan'));
+  assert.ok(!markup.includes('Upgrade to Master'));
 });

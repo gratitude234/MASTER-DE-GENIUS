@@ -2,6 +2,8 @@ import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 import { RevisionButton } from "@/components/results/revision-button";
+import { UpgradeLink } from "@/components/billing/upgrade-link";
+import { getPlanBadge } from "@/features/billing/usage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -24,7 +26,8 @@ const inlineLink =
 export default async function MistakesPage({ searchParams }: { searchParams: Promise<{ subject?: string; topic?: string; status?: string; page?: string }> }) {
   const { user, preference } = await getStudentProfile();
   const search = await searchParams;
-  const history = (await loadHistory(user.id)).filter(result => result.examBodyId === preference.exam_body_id);
+  const [fullHistory, plan] = await Promise.all([loadHistory(user.id), getPlanBadge(user.id)]);
+  const history = fullHistory.filter(result => result.examBodyId === preference.exam_body_id);
   const bank = mistakeBank(history);
   const mastered = search.status === "mastered";
   const subject = search.subject ?? "";
@@ -87,7 +90,10 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
       {!mastered && revisionSubjects.length > 0 ? (
         <section className="space-y-2.5 rounded-2xl bg-brand-50 px-[18px] py-4">
           <h2 className={typography.h2}>Practise my mistakes</h2>
-          <p className="text-[11.5px] text-slate-600">Choose a subject. Each session uses up to 20 of your saved mistakes.</p>
+          <p className="text-[11.5px] text-slate-600">
+            Choose a subject. Each session uses up to 20 of your saved mistakes.
+            {plan.tier === "free" ? " On the Free plan, practising them uses your free practice questions for today." : ""}
+          </p>
           <div className="flex flex-wrap gap-2">
             {revisionSubjects.map(([slug, name]) => (
               <RevisionButton
@@ -157,6 +163,14 @@ export default async function MistakesPage({ searchParams }: { searchParams: Pro
           <span className="mono-number text-[12.5px] font-semibold text-slate-500">{page} / {pages}</span>
           {page < pages ? <Link href={pageLink(page + 1)} className={inlineLink}>Next →</Link> : <span />}
         </nav>
+      ) : null}
+
+      {/* Every mistake above stays readable on Free. This only offers more practice. */}
+      {plan.tier === "free" && bank.length ? (
+        <p className="flex flex-wrap items-center gap-x-2 border-t border-slate-200 pt-3 text-[12.5px] text-slate-600">
+          <span>Want to practise every mistake, every day?</span>
+          <UpgradeLink source="mistakes" className={inlineLink} />
+        </p>
       ) : null}
     </div>
   );

@@ -14,7 +14,9 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
+import { PlanRailCard } from "@/components/billing/plan-status";
 import { BrandMark } from "@/components/brand/brand-mark";
+import type { PlanBadge } from "@/features/billing/usage-types";
 import { cn } from "@/lib/utils";
 
 const mobileItems = [
@@ -94,7 +96,7 @@ export interface ExamLabel {
   year: number;
 }
 
-export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }) {
+export function StudentNavigation({ examLabel, plan = null }: { examLabel: ExamLabel | null; plan?: PlanBadge | null }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const isWaec = examLabel?.shortName.toLowerCase() === "waec";
@@ -151,7 +153,8 @@ export function StudentNavigation({ examLabel }: { examLabel: ExamLabel | null }
             </div>
           ))}
         </nav>
-        <div className="mt-auto rounded-xl border border-white/[0.08] bg-white/[0.05] p-3">
+        <PlanRailCard plan={plan} />
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.05] p-3">
           <div className="text-xs font-bold">{examLabel ? `${examLabel.shortName} ${examLabel.year}` : "Your exam"}</div>
           <div className="mt-0.5 text-[11px] leading-4 text-white/50">Your preparation workspace</div>
         </div>

@@ -20,8 +20,8 @@ export function geminiApiKey(): string {
 /*
  * The daily generation allowance is no longer an environment variable.
  *
- * It is now a plan entitlement — three a day on Free, twenty on Master — and it
- * lives with the other plan limits in features/billing/plans.ts. A second
+ * It is now a plan entitlement and it lives with the other plan limits in
+ * features/billing/plans.ts, the only place its value is written. A second
  * source of truth in the environment could silently contradict what the pricing
  * page promises a paying student.
  */

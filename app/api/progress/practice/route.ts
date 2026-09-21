@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { practiceLimitResponse } from "@/features/billing/api";
+import { getEntitlement } from "@/features/billing/entitlements";
+import { PracticeAllowanceExhausted, practiceMeterFor, readPracticeAllowance } from "@/features/billing/quota";
 import { requireExamApiUser } from "@/features/exams/api";
 import { startRevision } from "@/features/results/service";
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
@@ -18,9 +21,20 @@ export async function POST(request: Request) {
       || (x.mistakes !== undefined && typeof x.mistakes !== "boolean")
       || (x.kind !== undefined && x.kind !== "exam" && x.kind !== "practice")
       || (x.resultId !== undefined && typeof x.resultId !== "string")) throw new Error("Invalid revision request.");
-    const sessionId = await startRevision(user.id, { examBody: typeof x.examBody === "string" ? x.examBody : undefined, subjectSlug: x.subjectSlug, topicSlug: x.topicSlug as string | undefined,
-      mistakes: x.mistakes as boolean | undefined, kind: x.kind as "exam" | "practice" | undefined, resultId: x.resultId as string | undefined });
-    return NextResponse.json({ sessionId }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    // Re-practising saved questions is a new practice attempt, so on a
+    // question-counted plan it draws on the same daily allowance as any other
+    // practice. Reading the mistake bank and results never does.
+    const meter = practiceMeterFor(await getEntitlement(user.id));
+    try {
+      const sessionId = await startRevision(user.id, { examBody: typeof x.examBody === "string" ? x.examBody : undefined, subjectSlug: x.subjectSlug, topicSlug: x.topicSlug as string | undefined,
+        mistakes: x.mistakes as boolean | undefined, kind: x.kind as "exam" | "practice" | undefined, resultId: x.resultId as string | undefined }, meter);
+      return NextResponse.json({ sessionId }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    } catch (error) {
+      if (error instanceof PracticeAllowanceExhausted) {
+        return practiceLimitResponse(error.meter, (await readPracticeAllowance(user.id, error.meter)) ?? undefined);
+      }
+      throw error;
+    }
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not start revision." }, { status: 400 });
   }

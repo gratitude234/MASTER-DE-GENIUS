@@ -41,7 +41,7 @@ export const BILLING_PLANS: readonly BillingPlan[] = [
     currency: BILLING_CURRENCY,
     durationDays: null,
     isPopular: false,
-    tagline: "Everything you need to start preparing seriously.",
+    tagline: "Try every part of MASTER@DE'GENIUS, a little each day.",
     displayOrder: 1,
   },
   {
@@ -105,32 +105,55 @@ export function purchasablePlans(): readonly BillingPlan[] {
 }
 
 /**
+ * How a tier's practice allowance is counted.
+ *
+ * `question` — first answers to practice questions, account-wide, per day. A
+ * session can never be built larger than what is left, and every question it
+ * contains is held against the allowance until it is answered.
+ *
+ * `session` — practice sessions created per day, whatever their size.
+ *
+ * Every route branches on this unit, never on the tier name, so switching Free
+ * back to session counting is a change to this file alone. That is the
+ * configuration-level rollback described in MONETIZATION-NOTES.md.
+ */
+export type PracticeAllowanceUnit = "question" | "session";
+
+export interface PracticeAllowance {
+  readonly unit: PracticeAllowanceUnit;
+  readonly perDay: number;
+}
+
+/**
  * Product limits, per tier.
  *
  * These are the entitlement quotas the product sells. They are not the provider
  * abuse limiter in lib/rate-limit.ts — that one exists to stop a runaway script
  * exhausting the question provider's quota for everybody, and it applies to
  * paying and free students alike.
+ *
+ * Every allowance is account-wide — never per subject, exam, device or session —
+ * and every day and month is a calendar day or month in Africa/Lagos (WAT).
  */
 export interface TierLimits {
-  /** Practice sessions a student may create. */
-  readonly practiceSessionsPerDay: number;
+  readonly practice: PracticeAllowance;
   /** Full mock attempts. Free is monthly; Master is daily. */
   readonly mockAttempts: number;
   readonly mockAttemptWindow: "day" | "month";
-  /** Newly generated AI explanations. Cache hits never count. */
+  /** Newly generated MASTER AI explanations. Reopened and cached ones never count. */
   readonly aiExplanationsPerDay: number;
 }
 
 export const TIER_LIMITS: Record<BillingTier, TierLimits> = {
   free: {
-    practiceSessionsPerDay: 20,
-    mockAttempts: 1,
+    practice: { unit: "question", perDay: 4 },
+    mockAttempts: 2,
     mockAttemptWindow: "month",
-    aiExplanationsPerDay: 3,
+    aiExplanationsPerDay: 2,
   },
+  // Unchanged by the Free plan revision. Master keeps exactly what it sold.
   master: {
-    practiceSessionsPerDay: 200,
+    practice: { unit: "session", perDay: 200 },
     mockAttempts: 3,
     mockAttemptWindow: "day",
     aiExplanationsPerDay: 20,

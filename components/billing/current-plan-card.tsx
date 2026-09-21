@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { CalendarClock, ShieldCheck } from "lucide-react";
 
+import { UpgradeLink } from "@/components/billing/upgrade-link";
 import { Badge } from "@/components/ui/badge";
+import { planAllowanceSummary } from "@/features/billing/copy";
 import { buttonClasses, radius, typography } from "@/components/ui/variants";
 import type { Entitlement } from "@/features/billing/entitlements";
 import { TIER_LIMITS } from "@/features/billing/plans";
@@ -85,19 +87,16 @@ export function CurrentPlanCard({ entitlement }: { entitlement: Entitlement }) {
               . Your results, mistake bank and history are all still here — renewing picks up where you left off.
             </>
           ) : (
-            <>
-              You have {limits.practiceSessionsPerDay} practice sessions a day, {limits.mockAttempts} full mock a month
-              and {limits.aiExplanationsPerDay} new AI explanations a day.
-            </>
+            <>You have {planAllowanceSummary(limits)}.</>
           )}
         </p>
       )}
 
       <dl className="mt-5 grid grid-cols-3 gap-2.5">
         {[
-          { label: "Practice / day", value: limits.practiceSessionsPerDay },
+          { label: limits.practice.unit === "question" ? "Questions / day" : "Practice sessions / day", value: limits.practice.perDay },
           { label: limits.mockAttemptWindow === "day" ? "Mocks / day" : "Mocks / month", value: limits.mockAttempts },
-          { label: "AI / day", value: limits.aiExplanationsPerDay },
+          { label: "MASTER AI / day", value: limits.aiExplanationsPerDay },
         ].map((item) => (
           <div
             key={item.label}
@@ -114,16 +113,21 @@ export function CurrentPlanCard({ entitlement }: { entitlement: Entitlement }) {
       </dl>
 
       <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
-        <Link
-          href="/pricing"
-          className={buttonClasses({
-            variant: isMaster ? "secondary" : "primary",
-            size: "lg",
-            className: "w-full sm:w-auto sm:min-w-48",
-          })}
-        >
-          {isMaster ? "Extend Master access" : lapsed ? "Renew Master access" : "Upgrade to Master"}
-        </Link>
+        {isMaster ? (
+          <Link
+            href="/pricing#plans"
+            className={buttonClasses({ variant: "secondary", size: "lg", className: "w-full sm:w-auto sm:min-w-48" })}
+          >
+            Extend Master access
+          </Link>
+        ) : (
+          <UpgradeLink
+            source="billing"
+            className={buttonClasses({ variant: "primary", size: "lg", className: "w-full sm:w-auto sm:min-w-48" })}
+          >
+            {lapsed ? "Renew Master access" : undefined}
+          </UpgradeLink>
+        )}
         {isMaster ? (
           <p className="flex items-center gap-2 text-[11.5px] text-white/60">
             <ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0" />
@@ -134,8 +138,7 @@ export function CurrentPlanCard({ entitlement }: { entitlement: Entitlement }) {
 
       {!isMaster ? (
         <p className={cn(typography.caption, "mt-3")}>
-          Master raises your limits to {TIER_LIMITS.master.practiceSessionsPerDay} practice sessions,{" "}
-          {TIER_LIMITS.master.mockAttempts} full mocks and {TIER_LIMITS.master.aiExplanationsPerDay} AI explanations a day.
+          Master raises your allowance to {planAllowanceSummary(TIER_LIMITS.master)}.
         </p>
       ) : null}
     </section>

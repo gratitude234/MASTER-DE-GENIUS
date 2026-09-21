@@ -2,10 +2,20 @@ import { resolveActiveExamContext } from "@/features/exam-context/service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
-import { planLimitResponse } from "@/features/billing/api";
-import { commitCapability, releaseCapability, reserveCapability } from "@/features/billing/quota";
+import { planLimitResponse, practiceLimitResponse } from "@/features/billing/api";
+import { getEntitlement } from "@/features/billing/entitlements";
+import {
+  commitCapability,
+  PracticeAllowanceExhausted,
+  practiceMeterFor,
+  readPracticeAllowance,
+  releaseCapability,
+  reserveCapability,
+  type PracticeMeter,
+} from "@/features/billing/quota";
 import { practiceErrorResponse, requireApiUser } from "@/features/practice/api";
 import { createPracticeSessionForUser } from "@/features/practice/service";
+import type { CreatePracticeSessionInput } from "@/features/practice/types";
 import { parseCreatePracticeSessionInput } from "@/features/practice/validation";
 import { claimCreation, creationFingerprint, settleCreation } from "@/lib/creation-claim";
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
@@ -26,6 +36,12 @@ export async function POST(request: Request) {
   // Before the provider is contacted, so a rejected request costs no quota.
   const limited = await enforceRateLimit(RATE_LIMITS.practiceCreate, user.id);
   if (limited) return limited;
+
+  // A plan that counts practice questions (Free) takes the metered path. Every
+  // entry point that builds a practice paper — this one, Past Questions (the
+  // same endpoint with a year) and revision — shares the one ledger.
+  const meter = practiceMeterFor(await getEntitlement(user.id));
+  if (meter) return createMeteredSession(user.id, input, meter);
 
   /*
    * The plan allowance is reserved, not spent. It is only committed once a
@@ -73,6 +89,76 @@ export async function POST(request: Request) {
     // does not permanently consume a day's practice allowance.
     await settleCreation(user.id, "practice", fingerprint, null);
     await releaseCapability(reservation.reservationId);
+    return practiceErrorResponse(error);
+  }
+}
+
+/**
+ * A practice session on a question-counted plan.
+ *
+ * The paper is never larger than what the student may still start: the request
+ * is sized down to the allowance before the provider is asked for anything, so
+ * questions beyond it are never fetched, never frozen and never sent. The size
+ * the browser asked for is not trusted — a manipulated count is simply clamped.
+ *
+ * The read here only sizes the request. The authoritative check runs again in
+ * `create_metered_practice_session` under the ledger lock, so two tabs racing
+ * for the last questions cannot both get them.
+ */
+async function createMeteredSession(userId: string, input: CreatePracticeSessionInput, meter: PracticeMeter) {
+  const allowance = await readPracticeAllowance(userId, meter);
+  if (!allowance) {
+    return NextResponse.json(
+      { error: "Practice is unavailable right now. Please try again shortly.", code: "ALLOWANCE_UNAVAILABLE" },
+      { status: 503, headers: { "Retry-After": "10" } },
+    );
+  }
+  if (allowance.available < 1 && allowance.remaining > 0) {
+    // Nothing is used up: what is left is already waiting in a session the
+    // student has not finished. Saying "you've used today's questions" would be
+    // false, so this says where they are instead.
+    return NextResponse.json(
+      {
+        error: "Your remaining free practice questions are waiting in a session you haven’t finished. Continue it to use them.",
+        code: "PRACTICE_QUESTIONS_WAITING",
+        allowance,
+      },
+      { status: 409, headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
+  if (allowance.available < 1) return practiceLimitResponse(meter, allowance);
+
+  const sized: CreatePracticeSessionInput = { ...input, count: Math.min(input.count, allowance.available) };
+  const fingerprint = creationFingerprint([
+    sized.examBody, sized.subjectSlug, sized.topicSlug, sized.count, sized.mode, sized.difficulty, sized.year,
+  ]);
+
+  const claim = await claimCreation(userId, "practice", fingerprint);
+  if (claim.status === "duplicate") {
+    // The first request's session already holds its questions; a retry must
+    // neither build nor hold a second paper.
+    return NextResponse.json(
+      { sessionId: claim.sessionId, questionCount: null, requestedCount: sized.count, deduplicated: true },
+      { status: 200 },
+    );
+  }
+  if (claim.status === "in_progress") {
+    return NextResponse.json(
+      { error: "This session is already being prepared. Give it a moment.", code: "CREATION_IN_PROGRESS" },
+      { status: 409, headers: { "Retry-After": "3" } },
+    );
+  }
+
+  try {
+    const result = await createPracticeSessionForUser(userId, sized, meter);
+    await settleCreation(userId, "practice", fingerprint, result.sessionId);
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    await settleCreation(userId, "practice", fingerprint, null);
+    if (error instanceof PracticeAllowanceExhausted) {
+      // Lost a race for the last questions. Nothing was created or held.
+      return practiceLimitResponse(meter, (await readPracticeAllowance(userId, meter)) ?? undefined);
+    }
     return practiceErrorResponse(error);
   }
 }

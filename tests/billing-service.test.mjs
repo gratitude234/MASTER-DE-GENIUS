@@ -78,14 +78,17 @@ test('the published prices and durations are exactly what the catalogue holds', 
 });
 
 test('the Free and Master limits are the published ones', () => {
+  // Free plan v2: 4 practice questions a day, 2 mocks a month, 2 new MASTER AI
+  // explanations a day — all account-wide.
   assert.deepEqual(plans.TIER_LIMITS.free, {
-    practiceSessionsPerDay: 20,
-    mockAttempts: 1,
+    practice: { unit: 'question', perDay: 4 },
+    mockAttempts: 2,
     mockAttemptWindow: 'month',
-    aiExplanationsPerDay: 3,
+    aiExplanationsPerDay: 2,
   });
+  // Master is exactly what it was before Free changed.
   assert.deepEqual(plans.TIER_LIMITS.master, {
-    practiceSessionsPerDay: 200,
+    practice: { unit: 'session', perDay: 200 },
     mockAttempts: 3,
     mockAttemptWindow: 'day',
     aiExplanationsPerDay: 20,
@@ -105,8 +108,9 @@ test('Free resolves for a student with no entitlement row at all', () => {
   const entitlement = resolveEntitlement(null);
   assert.equal(entitlement.tier, 'free');
   assert.equal(entitlement.isMaster, false);
-  assert.equal(entitlement.limits.aiExplanationsPerDay, 3);
-  assert.equal(entitlement.limits.practiceSessionsPerDay, 20);
+  assert.equal(entitlement.limits.aiExplanationsPerDay, 2);
+  assert.deepEqual(entitlement.limits.practice, { unit: 'question', perDay: 4 });
+  assert.equal(entitlement.limits.mockAttempts, 2);
   assert.equal(entitlement.plan, null);
 });
 
@@ -118,7 +122,7 @@ test('an unexpired Master row resolves to active Master with its plan', () => {
   assert.equal(entitlement.isMaster, true);
   assert.equal(entitlement.plan?.slug, 'master_90');
   assert.equal(entitlement.limits.aiExplanationsPerDay, 20);
-  assert.equal(entitlement.limits.practiceSessionsPerDay, 200);
+  assert.deepEqual(entitlement.limits.practice, { unit: 'session', perDay: 200 });
   assert.equal(entitlement.limits.mockAttempts, 3);
   assert.equal(entitlement.limits.mockAttemptWindow, 'day');
 });
@@ -129,7 +133,8 @@ test('an expired Master row falls back to Free, keeping the date for the billing
 
   assert.equal(entitlement.tier, 'free');
   assert.equal(entitlement.isMaster, false);
-  assert.equal(entitlement.limits.aiExplanationsPerDay, 3);
+  assert.equal(entitlement.limits.aiExplanationsPerDay, 2, 'lapsed Master resumes the Free policy');
+  assert.equal(entitlement.limits.practice.unit, 'question');
   assert.equal(entitlement.plan, null, 'a lapsed plan must not still be reported as the active plan');
   assert.equal(entitlement.expiresAt, expiresAt, 'the past expiry is preserved so it can be explained');
 });
@@ -957,27 +962,31 @@ test('a reference from the browser is validated before it is used as a lookup ke
 
 // ──────────────────────────────────────────────────────── quota windows
 
-test('quota windows are computed in UTC and name their own reset', () => {
+test('quota windows are computed on the Lagos calendar and name their own reset', () => {
   const noon = new Date(Date.UTC(2026, 8, 8, 12, 0, 0));
 
   const day = quotaWindow('day', noon);
   assert.equal(day.key, '2026-09-08');
-  assert.equal(day.resetAt.toISOString(), '2026-09-09T00:00:00.000Z');
+  // Midnight in Lagos (WAT, UTC+1) is 23:00 UTC the evening before.
+  assert.equal(day.resetAt.toISOString(), '2026-09-08T23:00:00.000Z');
 
   const month = quotaWindow('month', noon);
   assert.equal(month.key, '2026-09');
-  assert.equal(month.resetAt.toISOString(), '2026-10-01T00:00:00.000Z');
+  assert.equal(month.resetAt.toISOString(), '2026-09-30T23:00:00.000Z');
 
-  // Late in a UTC day, a device-local window would already have rolled over.
-  const lateUtc = new Date(Date.UTC(2026, 11, 31, 23, 59, 59));
-  assert.equal(quotaWindow('day', lateUtc).key, '2026-12-31');
-  assert.equal(quotaWindow('month', lateUtc).resetAt.toISOString(), '2027-01-01T00:00:00.000Z');
+  // The boundary is WAT midnight, not UTC midnight and not the device clock.
+  const beforeMidnightWat = new Date(Date.UTC(2026, 11, 31, 22, 59, 59));
+  const afterMidnightWat = new Date(Date.UTC(2026, 11, 31, 23, 0, 0));
+  assert.equal(quotaWindow('day', beforeMidnightWat).key, '2026-12-31');
+  assert.equal(quotaWindow('day', afterMidnightWat).key, '2027-01-01');
+  assert.equal(quotaWindow('month', beforeMidnightWat).key, '2026-12');
+  assert.equal(quotaWindow('month', afterMidnightWat).key, '2027-01');
+  assert.equal(quotaWindow('month', beforeMidnightWat).resetAt.toISOString(), '2026-12-31T23:00:00.000Z');
 });
 
 test('each capability resolves the limit and window its plan defines', () => {
-  assert.deepEqual(capabilityLimit('practice_session', plans.TIER_LIMITS.free), { limit: 20, windowKind: 'day' });
   assert.deepEqual(capabilityLimit('practice_session', plans.TIER_LIMITS.master), { limit: 200, windowKind: 'day' });
-  assert.deepEqual(capabilityLimit('mock_attempt', plans.TIER_LIMITS.free), { limit: 1, windowKind: 'month' });
+  assert.deepEqual(capabilityLimit('mock_attempt', plans.TIER_LIMITS.free), { limit: 2, windowKind: 'month' });
   assert.deepEqual(capabilityLimit('mock_attempt', plans.TIER_LIMITS.master), { limit: 3, windowKind: 'day' });
 });
 
@@ -994,55 +1003,55 @@ test('the free AI limit message is student-facing, not a bare quota error', () =
   const notice = planLimitNotice({
     capability: 'ai_explanation',
     tier: 'free',
-    limit: 3,
-    resetAt: new Date(Date.UTC(2026, 8, 9)),
+    limit: 2,
+    resetAt: new Date(Date.UTC(2026, 8, 8, 23)),
     windowKind: 'day',
   });
 
   const text = planLimitText(notice);
-  assert.match(text, /used today’s 3 free AI explanations/);
-  assert.match(text, /Upgrade to Master for up to 20 personalized explanations daily/);
-  assert.match(text, /resets at midnight UTC/, 'the student is told when it comes back');
-  assert.equal(notice.upgradeHref, '/pricing');
+  assert.equal(notice.message, 'You’ve used today’s 2 free MASTER AI explanations.');
+  assert.equal(notice.upgradeMessage, 'Upgrade to Master for more explanations.');
+  assert.equal(notice.resetLabel, 'Resets at midnight (WAT).', 'the student is told when it comes back');
+  assert.equal(notice.upgradeHref, '/pricing?source=ai_exhausted#plans');
   assert.ok(!/quota/i.test(text), 'never internal machinery wording');
 });
 
 test('the upgrade copy only promises limits this release actually raises', () => {
-  const notice = planLimitNotice({
-    capability: 'ai_explanation',
-    tier: 'free',
-    limit: 3,
-    resetAt: new Date(Date.UTC(2026, 8, 9)),
-    windowKind: 'day',
-  });
+  for (const capability of ['ai_explanation', 'practice_question', 'mock_attempt']) {
+    const notice = planLimitNotice({
+      capability,
+      tier: 'free',
+      limit: 2,
+      resetAt: new Date(Date.UTC(2026, 8, 8, 23)),
+      windowKind: capability === 'mock_attempt' ? 'month' : 'day',
+    });
 
-  /*
-   * Mistake review and revision are not gated in this release — a Free student
-   * has both in full. Selling them as Master features would be a promise the
-   * product does not keep, and the first thing a paying student would notice.
-   * This fails the moment that copy comes back without the gating behind it.
-   */
-  assert.ok(!/mistake review/i.test(notice.upgradeMessage));
-  assert.ok(!/revision tool/i.test(notice.upgradeMessage));
-  assert.match(notice.upgradeMessage, /200 practice sessions/);
-  assert.match(notice.upgradeMessage, /3 full mocks/);
+    /*
+     * Reading the mistake bank and reviewing answers are not Master features —
+     * a Free student keeps both in full. Selling them would be a promise the
+     * product does not keep. This fails the moment that copy comes back.
+     */
+    assert.ok(!/mistake review/i.test(notice.upgradeMessage), capability);
+    assert.ok(!/revision tool/i.test(notice.upgradeMessage), capability);
+    assert.ok(!/unlimited/i.test(notice.upgradeMessage), `${capability}: Master has limits too`);
+  }
 });
 
 test('every limit message names what ran out, when it resets and where to upgrade', () => {
-  for (const capability of ['practice_session', 'mock_attempt', 'ai_explanation']) {
+  for (const capability of ['practice_question', 'practice_session', 'mock_attempt', 'ai_explanation']) {
     const notice = planLimitNotice({
       capability,
       tier: 'free',
       limit: 5,
-      resetAt: new Date(Date.UTC(2026, 9, 1)),
+      resetAt: new Date(Date.UTC(2026, 8, 30, 23)),
       windowKind: capability === 'mock_attempt' ? 'month' : 'day',
     });
 
     assert.ok(notice.message.length > 20, `${capability} needs a real sentence`);
     assert.ok(notice.upgradeMessage, `${capability} must say what upgrading unlocks`);
-    assert.equal(notice.upgradeHref, '/pricing');
+    assert.match(notice.upgradeHref, /^\/pricing\?source=[a-z_]+_exhausted#plans$/, 'straight to the plan cards');
     assert.ok(!/quota exceeded/i.test(planLimitText(notice)));
-    assert.match(planLimitText(notice), /midnight UTC|1 October/);
+    assert.match(notice.resetLabel, /midnight \(WAT\)|1 October/);
   }
 });
 
@@ -1051,13 +1060,14 @@ test('a Master student who runs out is told when it resets, not asked to upgrade
     capability: 'ai_explanation',
     tier: 'master',
     limit: 20,
-    resetAt: new Date(Date.UTC(2026, 8, 9)),
+    resetAt: new Date(Date.UTC(2026, 8, 8, 23)),
     windowKind: 'day',
   });
 
   assert.equal(notice.upgradeMessage, null, 'there is nothing to upgrade to');
+  assert.equal(notice.upgradeSource, null);
   assert.match(notice.message, /20 Master AI explanations/);
-  assert.match(notice.message, /resets at midnight UTC/);
+  assert.match(planLimitText(notice), /Resets at midnight \(WAT\)/);
 });
 
 test('the browser only treats a properly shaped plan-limit body as one', () => {
@@ -1079,14 +1089,15 @@ test('the browser only treats a properly shaped plan-limit body as one', () => {
 test('the upgrade prompt renders the message, the benefit and a real link', async () => {
   const { UpgradePrompt } = await import('../components/billing/upgrade-prompt.tsx');
   const notice = planLimitNotice({
-    capability: 'ai_explanation', tier: 'free', limit: 3,
-    resetAt: new Date(Date.UTC(2026, 8, 9)), windowKind: 'day',
+    capability: 'ai_explanation', tier: 'free', limit: 2,
+    resetAt: new Date(Date.UTC(2026, 8, 8, 23)), windowKind: 'day',
   });
 
   const html = renderToStaticMarkup(React.createElement(UpgradePrompt, { notice }));
-  assert.ok(html.includes('3 free AI explanations'));
-  assert.ok(html.includes('20 personalized explanations daily'));
-  assert.ok(html.includes('href="/pricing"'), 'a navigable link, not a click handler');
+  assert.ok(html.includes('2 free MASTER AI explanations'));
+  assert.ok(html.includes('Upgrade to Master for more explanations.'));
+  assert.ok(html.includes('href="/pricing?source=ai_exhausted#plans"'), 'a navigable link, not a click handler');
+  assert.ok(html.includes('>Upgrade to Master</a>'), 'the action is named plainly');
   assert.ok(html.includes('role="status"'), 'announced without interrupting');
 });
 
@@ -1190,7 +1201,9 @@ test('the current-plan card states the limits and the expiry it is holding', asy
   }));
   assert.ok(free.includes('Free'));
   assert.ok(free.includes('Upgrade to Master'));
-  assert.ok(free.includes('href="/pricing"'));
+  assert.ok(free.includes('href="/pricing?source=billing#plans"'));
+  assert.ok(free.includes('4 practice questions a day'), 'the Free allowance is described in questions');
+  assert.ok(!free.includes('practice sessions a day, 2'), 'the old session wording is gone for Free');
 
   const master = renderToStaticMarkup(React.createElement(CurrentPlanCard, {
     entitlement: {
@@ -1229,7 +1242,12 @@ test('the plan comparison never claims Free hides a score, an answer or an expla
    * so every other row must read identically in both columns.
    */
   const gated = PLAN_COMPARISON.filter((row) => row.gated).map((row) => row.capability);
-  assert.deepEqual(gated, ['Practice questions', 'Full mock attempts', 'New AI explanations']);
+  assert.deepEqual(gated, ['Practice', 'Full mock attempts', 'New MASTER AI explanations']);
+  const byCapability = Object.fromEntries(PLAN_COMPARISON.map((row) => [row.capability, row]));
+  assert.equal(byCapability.Practice.free, '4 practice questions a day');
+  assert.equal(byCapability.Practice.master, '200 practice sessions a day', 'Master is unchanged');
+  assert.equal(byCapability['Full mock attempts'].free, '2 full mocks a month');
+  assert.equal(byCapability['New MASTER AI explanations'].free, '2 MASTER AI explanations a day');
 
   const alwaysIncluded = PLAN_COMPARISON.filter((row) => !row.gated);
   assert.ok(alwaysIncluded.length >= 5);

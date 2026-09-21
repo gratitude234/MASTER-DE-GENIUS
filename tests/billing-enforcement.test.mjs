@@ -24,19 +24,28 @@ const stub = (source) => ({ url: 'data:text/javascript,' + encodeURIComponent(so
 
 const NEXT_SERVER_URL = new URL('../node_modules/next/server.js', import.meta.url).href;
 
+const FREE_LIMITS = { practice: { unit: 'question', perDay: 4 }, mockAttempts: 2, mockAttemptWindow: 'month', aiExplanationsPerDay: 2 };
+const MASTER_LIMITS = { practice: { unit: 'session', perDay: 200 }, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 };
+
 /** Everything the routes reach for, recorded rather than performed. */
 const world = {
   reset(overrides = {}) {
     Object.assign(this, {
       tier: 'free',
-      limits: { practiceSessionsPerDay: 20, mockAttempts: 1, mockAttemptWindow: 'month', aiExplanationsPerDay: 3 },
+      limits: FREE_LIMITS,
       reserveAllowed: true,
       rateLimited: false,
       claimOutcome: { status: 'claimed' },
       unauthenticated: false,
       providerFails: false,
       mockResumed: false,
-      calls: { reserved: [], committed: [], released: [], created: [] },
+      // The free practice ledger, as `practice_question_allowance` would report it.
+      allowance: { limit: 4, used: 0, waiting: 0, remaining: 4, available: 4 },
+      allowanceUnreadable: false,
+      // Set when the metered create loses a race under the ledger lock.
+      meteredCreateRefused: false,
+      activeAttempt: null,
+      calls: { reserved: [], committed: [], released: [], created: [], createdInputs: [], meters: [] },
     }, overrides);
   },
 };
@@ -53,9 +62,18 @@ registerHooks({
      * codes and JSON bodies these tests assert on are the genuine article.
      */
     if (specifier === '@/lib/supabase/admin') return stub('export function createAdminClient(){ return {}; }');
-    if (specifier === '@/features/exam-context/service') return stub('export async function resolveActiveExamContext(db, user, code){ return { exam: { code: code ?? "jamb" } }; }');
+    if (specifier === '@/features/exam-context/service') return stub('export async function resolveActiveExamContext(db, user, code){ return { exam: { code: code ?? "jamb" }, exam_body_id: "jamb-id" }; }');
     if (specifier === 'next/server') {
       return { url: NEXT_SERVER_URL, shortCircuit: true };
+    }
+
+    if (specifier === '@/features/billing/entitlements') {
+      return stub(`
+        export async function getEntitlement() {
+          const world = globalThis.__world;
+          return { tier: world.tier, isMaster: world.tier === 'master', plan: null, expiresAt: null, limits: world.limits };
+        }
+      `);
     }
 
     if (specifier === '@/features/billing/quota') {
@@ -66,9 +84,21 @@ registerHooks({
         }
         export function capabilityLimit(capability, limits) {
           return capability === 'practice_session'
-            ? { limit: limits.practiceSessionsPerDay, windowKind: 'day' }
+            ? { limit: limits.practice.perDay, windowKind: 'day' }
             : { limit: limits.mockAttempts, windowKind: limits.mockAttemptWindow };
         }
+        export function practiceMeterFor(entitlement) {
+          if (entitlement.limits.practice.unit !== 'question') return null;
+          return { dayKey: '2026-09-21', limit: entitlement.limits.practice.perDay, resetAt: new Date(Date.now() + 3600_000), tier: entitlement.tier };
+        }
+        export async function readPracticeAllowance() {
+          const world = w();
+          return world.allowanceUnreadable ? null : { ...world.allowance };
+        }
+        export class PracticeAllowanceExhausted extends Error {
+          constructor(meter) { super('FREE_PRACTICE_LIMIT'); this.meter = meter; }
+        }
+        export function isPracticeLimitError(error) { return String(error?.message ?? error).includes('FREE_PRACTICE_LIMIT'); }
         export async function reserveCapability(userId, capability) {
           const world = w();
           const { limit, windowKind } = capabilityLimit(capability, world.limits);
@@ -134,11 +164,15 @@ registerHooks({
 
     if (specifier === '@/features/practice/service') {
       return stub(`
-        export async function createPracticeSessionForUser() {
+        import { PracticeAllowanceExhausted } from '@/features/billing/quota';
+        export async function createPracticeSessionForUser(userId, input, meter = null) {
           const world = globalThis.__world;
           if (world.providerFails) throw new Error('The question provider is unavailable.');
+          if (meter && world.meteredCreateRefused) throw new PracticeAllowanceExhausted(meter);
           world.calls.created.push('practice');
-          return { sessionId: 'session-1', questionCount: 10, requestedCount: 10 };
+          world.calls.createdInputs.push(input);
+          world.calls.meters.push(meter);
+          return { sessionId: 'session-1', questionCount: input.count, requestedCount: input.count };
         }
       `);
     }
@@ -150,6 +184,9 @@ registerHooks({
           if (world.providerFails) throw new Error('MOCK_INVENTORY_SHORTAGE|Physics|60|10');
           world.calls.created.push('mock');
           return { attemptId: 'attempt-1', resumed: world.mockResumed, totalQuestions: 180 };
+        }
+        export async function getActiveExamAttemptSummaryForUser() {
+          return globalThis.__world.activeAttempt;
         }
       `);
     }
@@ -181,47 +218,31 @@ const practiceRequest = () => new Request('https://app.invalid/api/practice/sess
 
 // ───────────────────────────────────────────────── practice session quota
 
-test('a Free student within their allowance starts a session and spends one slot', async () => {
-  world.reset();
+// Master keeps the session-counted allowance, on exactly the mechanism it had.
+const MASTER = { tier: 'master', limits: MASTER_LIMITS };
+
+test('a Master student within their allowance starts a session and spends one slot', async () => {
+  world.reset(MASTER);
   const response = await createPractice(practiceRequest());
 
   assert.equal(response.status, 201);
   assert.deepEqual(world.calls.reserved, ['practice_session']);
   assert.deepEqual(world.calls.committed, ['reservation-1'], 'the allowance is spent only once a session exists');
   assert.deepEqual(world.calls.released, []);
-});
-
-test('a Free student over their daily practice allowance is refused with an upgrade path', async () => {
-  world.reset({ reserveAllowed: false });
-  const response = await createPractice(practiceRequest());
-  const body = await response.json();
-
-  assert.equal(response.status, 402, 'a plan boundary is 402, distinct from a 429 "slow down"');
-  assert.equal(body.code, 'PLAN_LIMIT');
-  assert.equal(body.limit.tier, 'free');
-  assert.equal(body.limit.limit, 20);
-  assert.equal(body.limit.upgradeHref, '/pricing');
-  assert.match(body.error, /20 practice sessions for today/);
-  assert.match(body.error, /Upgrade to Master/);
-  assert.ok(!/quota/i.test(body.error), 'the student never sees internal wording');
-  assert.deepEqual(world.calls.created, [], 'nothing is built and no provider is contacted');
+  assert.deepEqual(world.calls.meters, [null], 'Master answers and sessions are never question-metered');
 });
 
 test('a Master student gets the larger practice allowance from the same mechanism', async () => {
-  world.reset({
-    tier: 'master',
-    limits: { practiceSessionsPerDay: 200, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 },
-    reserveAllowed: false,
-  });
+  world.reset({ ...MASTER, reserveAllowed: false });
   const body = await (await createPractice(practiceRequest())).json();
 
-  assert.equal(body.limit.limit, 200, 'Master is stopped at 200, not at 20');
+  assert.equal(body.limit.limit, 200, 'Master is stopped at 200 sessions, exactly as before');
   assert.equal(body.limit.tier, 'master');
   assert.equal(body.limit.upgradeMessage, null, 'there is nothing further to sell');
 });
 
 test('a provider failure gives the practice allowance straight back', async () => {
-  world.reset({ providerFails: true });
+  world.reset({ ...MASTER, providerFails: true });
   const response = await createPractice(practiceRequest());
 
   assert.equal(response.status, 503);
@@ -230,7 +251,7 @@ test('a provider failure gives the practice allowance straight back', async () =
 });
 
 test('a suppressed duplicate submit returns the first session without spending twice', async () => {
-  world.reset({ claimOutcome: { status: 'duplicate', sessionId: 'session-1' } });
+  world.reset({ ...MASTER, claimOutcome: { status: 'duplicate', sessionId: 'session-1' } });
   const response = await createPractice(practiceRequest());
   const body = await response.json();
 
@@ -238,6 +259,93 @@ test('a suppressed duplicate submit returns the first session without spending t
   assert.equal(body.deduplicated, true);
   assert.deepEqual(world.calls.released, ['reservation-1'], 'the second tap created nothing and pays nothing');
   assert.deepEqual(world.calls.committed, []);
+});
+
+// ───────────────────────────────────── Free: practice counted in questions
+
+test('a new Free student starts a session sized to their allowance, through the metered path', async () => {
+  world.reset();
+  const response = await createPractice(practiceRequest());
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(world.calls.reserved, [], 'Free no longer spends a session slot');
+  assert.equal(world.calls.createdInputs[0].count, 4, 'asked for 10, built no more than the 4 left');
+  assert.equal(body.questionCount, 4);
+  assert.equal(world.calls.meters[0].limit, 4);
+  assert.equal(world.calls.meters[0].tier, 'free');
+});
+
+test('a Free session is never larger than what is left — 2 left means at most 2', async () => {
+  world.reset({ allowance: { limit: 4, used: 2, waiting: 0, remaining: 2, available: 2 } });
+  await createPractice(practiceRequest());
+  assert.equal(world.calls.createdInputs[0].count, 2);
+});
+
+test('a manipulated count is clamped, never trusted', async () => {
+  world.reset({ allowance: { limit: 4, used: 3, waiting: 0, remaining: 1, available: 1 } });
+  const request = new Request('https://app.invalid/api/practice/sessions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subjectSlug: 'mathematics', count: 40 }),
+  });
+  await createPractice(request);
+  assert.equal(world.calls.createdInputs[0].count, 1, 'a 40-question request yields one question');
+});
+
+test('a Free student with nothing left is refused before any question is fetched', async () => {
+  world.reset({ allowance: { limit: 4, used: 4, waiting: 0, remaining: 0, available: 0 } });
+  const response = await createPractice(practiceRequest());
+  const body = await response.json();
+
+  assert.equal(response.status, 402, 'a plan boundary is 402, distinct from a 429 "slow down"');
+  assert.equal(body.code, 'PLAN_LIMIT');
+  assert.equal(body.limit.capability, 'practice_question');
+  assert.equal(body.limit.tier, 'free');
+  assert.equal(body.limit.limit, 4);
+  assert.equal(body.limit.message, 'You’ve used today’s 4 free practice questions.');
+  assert.equal(body.limit.upgradeMessage, 'Upgrade to Master to keep practising today.');
+  assert.equal(body.limit.upgradeHref, '/pricing?source=practice_exhausted#plans');
+  assert.ok(!/quota/i.test(body.error), 'the student never sees internal wording');
+  assert.deepEqual(world.calls.created, [], 'nothing is built and no provider is contacted');
+});
+
+test('questions waiting in an unfinished session are described as waiting, not as used', async () => {
+  world.reset({ allowance: { limit: 4, used: 1, waiting: 3, remaining: 3, available: 0 } });
+  const response = await createPractice(practiceRequest());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.code, 'PRACTICE_QUESTIONS_WAITING');
+  assert.ok(!/used today/i.test(body.error));
+  assert.deepEqual(world.calls.created, []);
+});
+
+test('losing the race for the last questions under the ledger lock is a clean 402', async () => {
+  world.reset({ meteredCreateRefused: true, allowance: { limit: 4, used: 3, waiting: 0, remaining: 1, available: 1 } });
+  const response = await createPractice(practiceRequest());
+  const body = await response.json();
+
+  assert.equal(response.status, 402);
+  assert.equal(body.limit.capability, 'practice_question');
+  assert.deepEqual(world.calls.created, [], 'the losing request created and held nothing');
+});
+
+test('an unreadable ledger fails closed as an outage, not as a used-up allowance', async () => {
+  world.reset({ allowanceUnreadable: true });
+  const response = await createPractice(practiceRequest());
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.ok(!/used today/i.test(body.error), 'a student is never told they spent questions they did not');
+  assert.deepEqual(world.calls.created, []);
+});
+
+test('a Free duplicate submit returns the first session and builds nothing more', async () => {
+  world.reset({ claimOutcome: { status: 'duplicate', sessionId: 'session-1' } });
+  const response = await createPractice(practiceRequest());
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).deduplicated, true);
+  assert.deepEqual(world.calls.created, []);
 });
 
 test('a request rejected by the abuse limiter never touches the plan allowance', async () => {
@@ -259,7 +367,7 @@ test('an unauthenticated request is rejected before anything is reserved', async
 
 // ────────────────────────────────────────────────────── mock attempt quota
 
-test('a Free student gets one full mock a month, then a monthly upgrade prompt', async () => {
+test('a Free student gets two full mocks a month, then the exact monthly upgrade prompt', async () => {
   world.reset();
   assert.equal((await createMock()).status, 201);
   assert.deepEqual(world.calls.committed, ['reservation-1']);
@@ -268,16 +376,33 @@ test('a Free student gets one full mock a month, then a monthly upgrade prompt',
   const body = await (await createMock()).json();
 
   assert.equal(body.code, 'PLAN_LIMIT');
-  assert.equal(body.limit.limit, 1);
+  assert.equal(body.limit.limit, 2);
   assert.equal(body.limit.capability, 'mock_attempt');
-  assert.match(body.error, /free full mock for this month/);
-  assert.match(body.error, /3 full mocks every day/, 'the student is told exactly what Master changes');
+  assert.equal(body.limit.message, 'You’ve used your 2 free mocks for this month.');
+  assert.equal(body.limit.upgradeMessage, 'Upgrade to Master to continue taking mock exams now.');
+  assert.equal(body.limit.upgradeHref, '/pricing?source=mock_exhausted#plans');
+  assert.deepEqual(world.calls.created, [], 'a third free mock is never built');
+});
+
+test('a Free student with no mocks left can still resume the paper they started', async () => {
+  world.reset({
+    reserveAllowed: false,
+    activeAttempt: { id: 'attempt-live', totalQuestions: 180 },
+  });
+  const response = await createMock();
+  const body = await response.json();
+
+  assert.equal(response.status, 200, 'a resume is never a new attempt, so it is never refused');
+  assert.equal(body.attemptId, 'attempt-live');
+  assert.equal(body.resumed, true);
+  assert.deepEqual(world.calls.created, [], 'nothing is built');
+  assert.deepEqual(world.calls.committed, [], 'and nothing is spent');
 });
 
 test('a Master student gets three full mocks a day', async () => {
   world.reset({
     tier: 'master',
-    limits: { practiceSessionsPerDay: 200, mockAttempts: 3, mockAttemptWindow: 'day', aiExplanationsPerDay: 20 },
+    limits: MASTER_LIMITS,
     reserveAllowed: false,
   });
   const body = await (await createMock()).json();

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Sparkles, Target } from "lucide-react";
 import { AppStatusRow } from "@/components/pwa/app-status-row";
 import { SignOut } from "@/components/pwa/sign-out";
+import { UpgradeLink } from "@/components/billing/upgrade-link";
+import { planAllowanceSummary } from "@/features/billing/copy";
 import { getEntitlement } from "@/features/billing/entitlements";
 import { getStudentProfile } from "@/features/profile/queries";
 import { ProfileNameForm } from "@/components/profile/profile-name-form";
@@ -62,13 +64,23 @@ export default async function MePage() {
               {entitlement.isMaster ? <Badge tone="success" dot>Active</Badge> : <Badge tone="neutral">Free tier</Badge>}
             </div>
             <p className="mt-1 text-[12px] text-slate-500">
-              {planExpiry ? `Master access until ${planExpiry}` : `${entitlement.limits.practiceSessionsPerDay} practice sessions and ${entitlement.limits.aiExplanationsPerDay} AI explanations a day`}
+              {planExpiry ? `Master access until ${planExpiry}` : planAllowanceSummary(entitlement.limits)}
             </p>
           </div>
-          <Link href="/billing" className={buttonClasses({ variant: "secondary", size: "md", className: "w-full sm:w-auto" })}>
-            {entitlement.isMaster ? "Manage plan" : "Upgrade to Master"}
-          </Link>
+          {/* Upgrading goes straight to the plan cards; managing a paid plan goes to billing. */}
+          {entitlement.isMaster ? (
+            <Link href="/billing" className={buttonClasses({ variant: "secondary", size: "md", className: "w-full sm:w-auto" })}>
+              Manage plan
+            </Link>
+          ) : (
+            <UpgradeLink source="me" className={buttonClasses({ variant: "primary", size: "md", className: "w-full sm:w-auto" })} />
+          )}
         </div>
+        {entitlement.isMaster ? null : (
+          <Link href="/billing" className="mt-2 inline-flex min-h-11 items-center text-xs font-bold text-slate-600 hover:text-slate-900">
+            Billing and payment history
+          </Link>
+        )}
       </section>
 
       <AppStatusRow />

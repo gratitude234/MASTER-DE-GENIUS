@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { BrainCircuit, Sparkles, Target } from "lucide-react";
 
+import { useAiAllowance } from "@/components/billing/ai-allowance";
+import { AllowanceNotice } from "@/components/billing/allowance-notice";
 import { UpgradePrompt } from "@/components/billing/upgrade-prompt";
+import { AI_ONE_REMAINING, aiExhausted } from "@/features/billing/copy";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { asPlanLimitNotice, type PlanLimitNotice } from "@/features/billing/limit-notice";
@@ -34,8 +37,14 @@ export function AiQuestionExplanation({
   const [result, setResult] = useState<ExplanationResponse | null>(null);
   const [error, setError] = useState("");
   const [limit, setLimit] = useState<PlanLimitNotice | null>(null);
+  const { allowance, report } = useAiAllowance();
 
   if (!enabled || hasVisual) return null;
+
+  // Free only, and only from a count the server supplied. Reopening an
+  // explanation never spends one, so the buttons stay usable at zero — the
+  // server answers from the student's own history or says the day is used.
+  const freeRemaining = allowance?.tier === "free" ? allowance.remaining : null;
 
   async function requestExplanation(explanationType: ExplanationType) {
     setLoading(explanationType);
@@ -57,6 +66,7 @@ export function AiQuestionExplanation({
         const notice = asPlanLimitNotice(body);
         if (notice) {
           setLimit(notice);
+          report(0);
           return;
         }
         const message = body && typeof body === "object" && "error" in body && typeof body.error === "string"
@@ -64,7 +74,9 @@ export function AiQuestionExplanation({
           : "MASTER AI couldn’t generate an explanation right now.";
         throw new Error(message);
       }
-      setResult(body as ExplanationResponse);
+      const explained = body as ExplanationResponse;
+      setResult(explained);
+      if (typeof explained.remainingToday === "number") report(explained.remainingToday);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "MASTER AI couldn’t generate an explanation right now.");
     } finally {
@@ -102,6 +114,21 @@ export function AiQuestionExplanation({
           </Button>
         ) : null}
       </div>
+
+      {!limit && freeRemaining === 1 ? (
+        <AllowanceNotice className="mt-2" emphasis="subtle" message={AI_ONE_REMAINING} source="ai_one_remaining" />
+      ) : null}
+
+      {!limit && !result && freeRemaining === 0 && allowance ? (
+        <AllowanceNotice
+          className="mt-2"
+          emphasis="subtle"
+          message={aiExhausted(allowance.limit).message}
+          upgrade={aiExhausted(allowance.limit).upgrade}
+          source="ai_exhausted"
+          detail="Explanations you’ve already opened stay available, and the standard explanation is always here."
+        />
+      ) : null}
 
       {limit ? (
         <div className="mt-3">

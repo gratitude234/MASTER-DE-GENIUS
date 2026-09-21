@@ -40,6 +40,7 @@ registerHooks({
     if (specifier === '@/features/questions/catalog') return stub(`export async function getPracticeCatalog(){ return globalThis.__catalog; }`);
     if (specifier === '@/features/practice/service') return stub(`export async function getLatestActivePracticeSessionForUser(){ return null; }`);
     if (specifier === '@/features/results/service') return stub(`export async function loadHistory(){ return []; }`);
+    if (specifier === "@/features/billing/usage") return { url: new URL("./stubs/billing-usage.mjs", import.meta.url).href, shortCircuit: true };
     return next(specifier, context);
   },
 });

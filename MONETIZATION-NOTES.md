@@ -1,5 +1,10 @@
 # M9 — Paystack monetization, Free and Master entitlements
 
+> **Free plan limits changed in Free plan v2** — 4 practice questions a day, 2 mocks a month and
+> 2 MASTER AI explanations a day, on the WAT calendar. §4 below is current; everything about how
+> they are counted, where the upgrade prompts live, and how to roll back is in
+> [FREE-PLAN-V2-NOTES.md](FREE-PLAN-V2-NOTES.md). Master is unchanged.
+
 > **Apply `supabase/migrations/20260908060000_m9_billing_and_entitlements.sql` before deploying this
 > release.** Without it, `/pricing`, `/billing`, checkout, the webhook and every practice, mock and
 > AI-generation quota call a table and a function that do not exist. Practice and mock creation fail
@@ -126,16 +131,23 @@ fresh path converge exactly.
 | `master_90` | Master Exam Pass — **Most Popular** | ₦3,500 | 350000 | 90 days |
 | `master_180` | Master Season Pass | ₦5,500 | 550000 | 180 days |
 
+> **Superseded by Free plan v2 (September 2026).** The table below is the current policy; the
+> full design — consumption rules, the practice-question ledger, rollback — is in
+> [FREE-PLAN-V2-NOTES.md](FREE-PLAN-V2-NOTES.md). The original M9 Free limits (20 practice
+> sessions a day, 1 mock a month, 3 AI explanations a day, UTC windows) no longer apply.
+
 | Capability | Free | Master | Enforced |
 | --- | ---: | ---: | --- |
-| Practice sessions created | 20 / day | 200 / day | ✅ `product_usage_reservations` |
-| Full mock attempts | 1 / calendar month | 3 / day | ✅ `product_usage_reservations` |
-| Newly generated AI explanations | 3 / day | 20 / day | ✅ `consume_ai_daily_quota` |
-| Cached AI explanations | Unlimited | Unlimited | Cache hit returns before the quota is consulted |
-| Scores, correct answers, standard explanations | Included | Included | Never gated |
-| Result history, mistake review, revision | Included | Included | **Deferred — see §20** |
+| Practice | **4 questions / day** (first answers) | 200 sessions / day (unchanged) | ✅ Free: `practice_question_usage` ledger · Master: `product_usage_reservations` |
+| Full mock attempts | **2 / calendar month** | 3 / day (unchanged) | ✅ `product_usage_reservations` |
+| Newly generated MASTER AI explanations | **2 / day** | 20 / day (unchanged) | ✅ `consume_ai_daily_quota` |
+| Cached or previously received AI explanations | Free | Free | Cache hit or receipt returns before the quota is consulted |
+| Scores, correct answers, standard explanations, answer review | Included | Included | Never gated |
+| Result history and mistake bank (reading) | Included | Included | Never gated |
+| Practising from results or the mistake bank | Counts as practice | Unchanged | Same Free question ledger |
 
-Windows are UTC. Daily resets at `00:00Z`; the Free monthly mock resets on the first of the month.
+Every allowance is account-wide and resets on the **Africa/Lagos (WAT)** calendar: daily at
+00:00 WAT (23:00Z), monthly on the first of the month at 00:00 WAT.
 
 ## 5. Checkout flow
 
@@ -362,24 +374,21 @@ re-recorded again after the pre-approval fixes in §6a.
 
 ## 20. Remaining limitations
 
-1. **History, mistake review and revision are not restricted.** The spec's table marks these
-   "recent/basic" and "limited" on Free. Implementing them would mean reworking `features/results`,
-   the progress dashboard and the mistake bank, which the spec explicitly says not to do in this
-   pass. Free students currently get all three in full, and the pricing table says so honestly.
-2. **The recommended AI upgrade sentence was adjusted.** The specified copy ended "…complete mistake
-   review and advanced revision tools", but because of (1) those are not Master features today.
-   Shipping that line would promise a paying student something they already have. The message keeps
-   its shape and the real differentiator — "up to 20 personalized explanations daily" — and names the
-   two limits Master genuinely raises. `tests/billing-service.test.mjs` fails if the original wording
-   returns without the gating behind it. **Restore it in the same change that gates mistake review.**
+1. **History and mistake review are not restricted.** Free students read their full history and
+   mistake bank. Since Free plan v2, *practising* from them (revision) draws on the Free
+   practice-question allowance like any other practice; reading never does.
+2. **The AI upgrade sentence never promises mistake review.** Free plan v2 replaced it with the
+   specified "Upgrade to Master for more explanations." `tests/billing-service.test.mjs` still fails
+   if any upgrade message promises mistake review or revision tools.
 3. **No automatic renewal.** All three paid products are one-time purchases. The UI never claims
    otherwise; "Master Monthly" means 30 days bought once.
 4. **Refunds and chargebacks are manual.** See §9.
 5. **Not implemented, as instructed:** the founders' 70/30 split, school plans, referrals, coupons,
    gifting, family plans, affiliate commissions, lifetime access.
 6. **Quota rows accumulate.** `product_usage_reservations` keeps one committed row per created
-   session. At 200/day on Master that is bounded and cheap, but a periodic purge of windows older
-   than a couple of months is worth adding before scale.
+   session, and `practice_question_usage` one row per charged Free question (at most 4 a day per
+   student). Both are bounded and cheap, but a periodic purge of windows older than a couple of
+   months is worth adding before scale.
 7. **Webhook events are never pruned.** Same consideration.
 8. **The callback polls up to 8 times over ~20 seconds** before offering a manual retry. A payment
    still settling after that resolves on the next visit to `/billing`.

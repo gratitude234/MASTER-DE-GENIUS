@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { UpgradePrompt } from "@/components/billing/upgrade-prompt";
+import { asPlanLimitNotice, type PlanLimitNotice } from "@/features/billing/limit-notice";
 import type { RevisionInput } from "@/features/results/service";
 import { buttonClasses } from "@/components/ui/variants";
 
@@ -26,15 +28,21 @@ export function RevisionButton({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [limit, setLimit] = useState<PlanLimitNotice | null>(null);
   async function start() {
     if (busy) return;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setLimit(null);
     try {
       const response = await fetch("/api/progress/practice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
       const payload = await response.json() as { sessionId?: string; error?: string };
-      if (!response.ok || !payload.sessionId) throw new Error(payload.error || "Could not start revision.");
+      if (!response.ok || !payload.sessionId) {
+        // Today's free practice questions are used: the upgrade path, not an error band.
+        const notice = asPlanLimitNotice(payload);
+        if (notice) { setLimit(notice); setBusy(false); return; }
+        throw new Error(payload.error || "Could not start revision.");
+      }
       router.push(`/practice/session/${payload.sessionId}`);
     } catch (e) { setError(e instanceof Error ? e.message : "Please try again."); setBusy(false); }
   }
-  return <div><button type="button" disabled={busy} aria-busy={busy || undefined} onClick={start} className={className ?? DEFAULT_BUTTON}>{busy ? "Starting…" : children}</button>{error && <p role="alert" className={errorClassName ?? DEFAULT_ERROR}>{error}</p>}</div>;
+  return <div><button type="button" disabled={busy} aria-busy={busy || undefined} onClick={start} className={className ?? DEFAULT_BUTTON}>{busy ? "Starting…" : children}</button>{error && <p role="alert" className={errorClassName ?? DEFAULT_ERROR}>{error}</p>}{limit ? <UpgradePrompt notice={limit} className="mt-2.5" /> : null}</div>;
 }

@@ -1,6 +1,8 @@
 import { ShieldCheck } from "lucide-react";
 
 import { PricingPlans } from "@/components/billing/pricing-plans";
+import { TrackPricingView } from "@/components/billing/track-pricing-view";
+import { parseUpgradeSource } from "@/features/billing/upgrade";
 import { radius, typography } from "@/components/ui/variants";
 import { getEntitlement } from "@/features/billing/entitlements";
 import { requireOnboardedUser } from "@/lib/auth";
@@ -20,10 +22,12 @@ const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
 });
 
-export default async function PricingPage() {
+export default async function PricingPage({ searchParams }: { searchParams: Promise<{ source?: string }> }) {
   const { user } = await requireOnboardedUser();
   // Resolved on the server. The cards below display it; they never decide it.
   const entitlement = await getEntitlement(user.id);
+  // Attribution only, from a fixed list; anything else is dropped.
+  const source = parseUpgradeSource((await searchParams).source);
 
   return (
     <div className="screen-enter mx-auto max-w-[1000px] space-y-4">
@@ -36,7 +40,9 @@ export default async function PricingPage() {
         </p>
       </div>
 
+      <TrackPricingView source={source} />
       <PricingPlans
+        source={source}
         currentTier={entitlement.tier}
         currentPlanSlug={entitlement.plan?.slug ?? null}
         expiryLabel={

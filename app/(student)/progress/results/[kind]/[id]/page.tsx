@@ -3,6 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AnswerReview } from "@/components/results/answer-review";
+import { AiAllowanceProvider } from "@/components/billing/ai-allowance";
+import { UpgradeLink } from "@/components/billing/upgrade-link";
+import { RESULTS_UPGRADE } from "@/features/billing/copy";
+import { getUsageSummary } from "@/features/billing/usage";
 import { RevisionButton } from "@/components/results/revision-button";
 import { CompletionNotice } from "@/components/pwa/completion-notice";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +30,7 @@ export default async function ResultPage({ params }: { params: Promise<{ kind: s
   const { user, supabase } = await requireOnboardedUser();
   const { kind, id } = await params;
   if (kind !== "exam" && kind !== "practice") notFound();
-  const result = await loadResult(user.id, kind, id);
+  const [result, usage] = await Promise.all([loadResult(user.id, kind, id), getUsageSummary(user.id)]);
   if (!result) notFound();
   const { data: preference } = await supabase.from("student_exam_preferences").select("target_score").eq("user_id", user.id).eq("exam_body_id", result.examBodyId).order("is_active", { ascending: false }).order("exam_year", { ascending: false }).limit(1).maybeSingle();
   const weak = [...result.topics].filter(t => t.topicSlug && t.accuracy < 70).sort((a, b) => a.accuracy - b.accuracy || b.total - a.total).slice(0, 3);
@@ -148,6 +152,20 @@ export default async function ResultPage({ params }: { params: Promise<{ kind: s
         </Link>
       </section>
 
+      {/*
+        Free only, and only after the whole result above has been shown. It
+        sells more practice; it never stands between a student and their score.
+      */}
+      {usage.isMaster ? null : (
+        <section aria-labelledby="results-upgrade" className="flex flex-col gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-[18px] sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 id="results-upgrade" className="text-[13.5px] font-bold text-slate-950">{RESULTS_UPGRADE.message}</h2>
+            <p className="mt-1 text-[12.5px] leading-[1.55] text-slate-700">{RESULTS_UPGRADE.upgrade}</p>
+          </div>
+          <UpgradeLink source="results" className={buttonClasses({ variant: "dark", size: "md", className: "w-full shrink-0 sm:w-auto" })} />
+        </section>
+      )}
+
       {weak[0] ? (
         <ClassHelpCard
           href={classRequestHref({ source: "result", examType: result.examCode, subjectSlug: weak[0].subjectSlug, subjectName: subjectName(weak[0].subjectSlug) ?? weak[0].subjectSlug, topic: weak[0].name, reason: "weak_topic", accuracy: weak[0].accuracy })}
@@ -174,12 +192,14 @@ export default async function ResultPage({ params }: { params: Promise<{ kind: s
         </div>
       </section>
 
-      <AnswerReview
-        items={result.items}
-        resultKind={kind}
-        resultId={id}
-        aiExplanationsEnabled={aiExplanationsEnabled()}
-      />
+      <AiAllowanceProvider initial={usage.isMaster ? null : { tier: usage.tier, meter: usage.aiExplanations }}>
+        <AnswerReview
+          items={result.items}
+          resultKind={kind}
+          resultId={id}
+          aiExplanationsEnabled={aiExplanationsEnabled()}
+        />
+      </AiAllowanceProvider>
 
       {/* The two ways forward from a result, as the approved system pairs them. */}
       <div className="flex flex-col gap-2.5 sm:flex-row">

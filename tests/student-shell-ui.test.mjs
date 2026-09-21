@@ -23,7 +23,11 @@ registerHooks({
       return { url: new URL('./stubs/next-link.mjs', import.meta.url).href, shortCircuit: true };
     }
     if (specifier === '@/features/onboarding/actions') {
-      return stub(`export async function completeOnboardingAction(){ return {}; }`);
+      // Both server actions the onboarding flow binds to. The second was added to
+      // the flow without being added here, which failed this whole file at
+      // import time before any assertion ran (pre-existing on HEAD 6be4a20).
+      return stub(`export async function completeOnboardingAction(){ return {}; }
+        export async function saveExamPreparationsAction(){ return {}; }`);
     }
     return next(specifier, context);
   },

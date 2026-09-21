@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 
 import { planLimitResponse } from "@/features/billing/api";
 import { commitCapability, releaseCapability, reserveCapability } from "@/features/billing/quota";
+import { resolveActiveExamContext } from "@/features/exam-context/service";
 import { examErrorResponse, requireExamApiUser } from "@/features/exams/api";
-import { createMockExamAttemptForUser } from "@/features/exams/service";
+import { createMockExamAttemptForUser, getActiveExamAttemptSummaryForUser } from "@/features/exams/service";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { claimCreation, creationFingerprint, settleCreation } from "@/lib/creation-claim";
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 
@@ -17,12 +19,25 @@ export async function POST() {
   if (limited) return limited;
 
   /*
-   * The plan allowance: one full mock a month on Free, three a day on Master.
-   * Reserved before the paper is built and only committed once a *new* attempt
-   * exists, so resuming an attempt already in progress costs nothing.
+   * The plan allowance: two full mocks a month on Free, three a day on Master,
+   * account-wide. Reserved before the paper is built and only committed once a
+   * *new* attempt exists, so resuming an attempt already in progress costs
+   * nothing.
    */
   const reservation = await reserveCapability(user.id, "mock_attempt");
-  if (!reservation.allowed) return planLimitResponse("mock_attempt", reservation);
+  if (!reservation.allowed) {
+    // Returning to a paper already in progress is never a new attempt. A
+    // student who has used this month's mocks must still get back into the one
+    // they started — after a disconnect, from a second tab, or after a refresh.
+    const active = await findActiveMockAttempt(user.id);
+    if (active) {
+      return NextResponse.json(
+        { attemptId: active.id, resumed: true, totalQuestions: active.totalQuestions },
+        { status: 200 },
+      );
+    }
+    return planLimitResponse("mock_attempt", reservation);
+  }
 
   /*
    * The existing one-active-attempt index still does the real work: it makes a
@@ -61,5 +76,15 @@ export async function POST() {
     await settleCreation(user.id, "exam", fingerprint, null);
     await releaseCapability(reservation.reservationId);
     return examErrorResponse(error);
+  }
+}
+
+/** The live attempt the mock service would resume — same exam context, same rule. */
+async function findActiveMockAttempt(userId: string) {
+  try {
+    const context = await resolveActiveExamContext(createAdminClient(), userId, "jamb");
+    return await getActiveExamAttemptSummaryForUser(userId, context.exam_body_id);
+  } catch {
+    return null;
   }
 }

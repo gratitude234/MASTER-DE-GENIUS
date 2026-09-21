@@ -10,6 +10,8 @@ export class DurableQueue {
   private stopped = false;
   error = "";
   code = "";
+  /** Set once the server has refused an answer for the free allowance. Never cleared by a flush. */
+  limited = false;
   constructor(public record: OfflineRecord,
     private persist: (r: OfflineRecord) => Promise<unknown>,
     private send: (id: string, p: PendingSelection) => Promise<Ack>,
@@ -41,8 +43,27 @@ export class DurableQueue {
       while (!this.stopped && Object.keys(this.record.pending).length) {
         const id = Object.keys(this.record.pending)[0];
         const sent = { ...this.record.pending[id] };
-        const ack = await this.send(id, sent);
+        const ack = await this.send(id, sent).catch((e: unknown) => {
+          if (e instanceof SyncFailure && e.code === "PLAN_LIMIT") return null;
+          throw e;
+        });
         if (this.stopped) return false;
+        if (ack === null) {
+          /*
+           * The server refused to count this answer against the student's free
+           * allowance, so it was never saved — and retrying cannot change that
+           * until the allowance resets or the student upgrades. It is dropped
+           * here rather than retried for ever, which would also block "Finish".
+           * Only a first answer can be refused, so the question simply returns
+           * to unanswered at its current server revision.
+           */
+          if (this.record.pending[id]?.mutationId === sent.mutationId) delete this.record.pending[id];
+          const current = this.record.answers[id];
+          if (current) this.record.answers[id] = { ...current, selectedOptionKey: null, isFlagged: false, feedback: undefined };
+          this.limited = true;
+          await this.save(); this.changed();
+          continue;
+        }
         if (ack.mutationId !== sent.mutationId) throw new SyncFailure("Unexpected save response. Retry syncing.", "RETRY");
         const newer = this.record.pending[id];
         if (newer?.mutationId === sent.mutationId) {

@@ -5,13 +5,22 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { CalendarRange, Clock3, Layers3, Lock, Sparkles } from "lucide-react";
 
+import { AllowanceNotice } from "@/components/billing/allowance-notice";
 import { UpgradePrompt } from "@/components/billing/upgrade-prompt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/inline-alert";
 import { Select } from "@/components/ui/select";
 import { navClearance, typography } from "@/components/ui/variants";
+import {
+  countNoun,
+  PRACTICE_ONE_REMAINING,
+  practiceExhausted,
+  practiceRemainingLine,
+  resetLine,
+} from "@/features/billing/copy";
 import { asPlanLimitNotice, type PlanLimitNotice } from "@/features/billing/limit-notice";
+import type { PracticeUsage } from "@/features/billing/usage-types";
 import type { PracticeRecommendation } from "@/features/home/recommendation";
 import { TIMED_SECONDS_PER_QUESTION } from "@/features/practice/types";
 import type { PracticeCatalogSubject } from "@/features/questions/types";
@@ -61,12 +70,29 @@ interface PracticeSetupProps {
     answeredCount: number;
     questionCount: number;
   } | null;
+  /**
+   * The server's count of free practice questions, on a plan that counts them.
+   * Null on Master. Displayed and used to size the offer only — the session
+   * route re-checks and clamps whatever is sent.
+   */
+  practiceAllowance?: PracticeUsage | null;
 }
 
 type PracticeMode = "practice" | "timed";
 
 const QUESTION_COUNTS = [10, 20, 30, 40] as const;
 const DEFAULT_COUNT = 20;
+
+/**
+ * The sizes a question-counted plan may choose from: never more than can still
+ * be started. With four left that is 1–4; with two, 1–2; with none, nothing.
+ */
+export function allowedQuestionCounts(available: number): number[] {
+  if (available < 1) return [];
+  const sizes = [1, 2, 3, 4, 5, ...QUESTION_COUNTS].filter((count) => count <= available);
+  if (!sizes.includes(available)) sizes.push(available);
+  return [...new Set(sizes)].sort((a, b) => a - b).slice(-4);
+}
 
 const UNAVAILABLE_EXPLANATION =
   "Not available yet — this subject is not in our current question source. It returns automatically once ready.";
@@ -107,7 +133,12 @@ export function PracticeSetup({
   prefillFromRecommendation,
   initialMode = "practice",
   resumeSession,
+  practiceAllowance = null,
 }: PracticeSetupProps) {
+  const metered = Boolean(practiceAllowance);
+  const available = practiceAllowance?.available ?? 0;
+  const countOptions: readonly number[] = metered ? allowedQuestionCounts(available) : QUESTION_COUNTS;
+  const sizeFor = (count: number) => (metered ? Math.max(1, Math.min(count, available)) : count);
   const router = useRouter();
   const unavailable = useMemo(() => new Set(unavailableSubjects), [unavailableSubjects]);
   const availableSubjects = useMemo(
@@ -154,7 +185,10 @@ export function PracticeSetup({
   const [topicSlug, setTopicSlug] = useState(
     () => (prefillFromRecommendation ? prefill?.topicSlug : undefined) ?? "all",
   );
-  const [questionCount, setQuestionCount] = useState<number>(DEFAULT_COUNT);
+  const [chosenCount, setQuestionCount] = useState<number>(() => sizeFor(DEFAULT_COUNT));
+  // Never offer, label or send more than the allowance can start.
+  const questionCount = sizeFor(chosenCount);
+  const blockedByAllowance = metered && available < 1;
   const [mode, setMode] = useState<PracticeMode>(initialMode);
   const [difficulty, setDifficulty] = useState<QuestionDifficulty | "mixed">("mixed");
   const [year, setYear] = useState("all");
@@ -181,12 +215,12 @@ export function PracticeSetup({
     if (!prefill) return;
     setSubjectSlug(prefill.subject.slug);
     setTopicSlug(prefill.topicSlug);
-    setQuestionCount(DEFAULT_COUNT);
+    setQuestionCount(sizeFor(DEFAULT_COUNT));
     setMode("practice");
   };
 
   const startSession = async () => {
-    if (!activeSubject || starting) return;
+    if (!activeSubject || starting || blockedByAllowance) return;
     setStarting(true);
     setStartError(null);
     setPlanLimit(null);
@@ -276,6 +310,8 @@ export function PracticeSetup({
           </Link>
         ))}
       </nav>
+
+      {practiceAllowance ? <FreePracticeStatus allowance={practiceAllowance} /> : null}
 
       {resumeSession ? (
         <button
@@ -405,8 +441,20 @@ export function PracticeSetup({
         <div className="grid grid-cols-2 gap-5">
           <div>
             <h2 className={typography.h2} id="practice-count-label">Questions</h2>
-            <div className="mt-2.5 flex gap-1.5" role="group" aria-labelledby="practice-count-label">
-              {QUESTION_COUNTS.map((count) => (
+            {metered ? (
+              <p id="practice-count-note" className="mt-1 text-[11px] leading-4 text-slate-500">
+                {available > 0
+                  ? `Free plan: up to ${countNoun(available, "question")} right now`
+                  : "No free questions left to start today"}
+              </p>
+            ) : null}
+            <div
+              className="mt-2.5 flex gap-1.5"
+              role="group"
+              aria-labelledby="practice-count-label"
+              aria-describedby={metered ? "practice-count-note" : undefined}
+            >
+              {countOptions.map((count) => (
                 <button
                   type="button"
                   key={count}
@@ -489,16 +537,66 @@ export function PracticeSetup({
           size="xl"
           fullWidth
           onClick={startSession}
+          disabled={blockedByAllowance}
           loading={starting}
           loadingLabel="Building session…"
           iconBefore={<Clock3 className="h-4 w-4" aria-hidden="true" />}
         >
-          Start {questionCount}-question session
+          {blockedByAllowance ? "No free questions left to start today" : `Start ${questionCount}-question session`}
         </Button>
         <p className="mt-2 text-center text-[11px] text-slate-500">
           Your question set is frozen when the session starts, so refreshes and resumes stay consistent.
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Where a Free student stands before they build anything.
+ *
+ * The counts are the server's. The three states that matter each get their own
+ * sentence: one question left, none left, and "what is left is already waiting
+ * in a session you haven't finished" — which is not the same as used up, and
+ * must not be described as if it were.
+ */
+function FreePracticeStatus({ allowance }: { allowance: PracticeUsage }) {
+  const { remaining, limit, waiting, available } = allowance;
+
+  if (remaining === null) {
+    return (
+      <InlineAlert tone="warning" role="status">
+        We couldn’t check today’s free practice questions just now. Try again in a moment.
+      </InlineAlert>
+    );
+  }
+
+  const exhausted = practiceExhausted(limit);
+  return (
+    <div className="space-y-2.5">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] text-slate-700">
+        <Badge tone="neutral">Free plan</Badge>
+        <span className="font-semibold text-slate-950">{practiceRemainingLine(remaining, limit)}</span>
+        <span className="text-slate-500">· {resetLine(allowance.resetAt, "day")}</span>
+      </p>
+
+      {remaining > 0 && waiting && available === 0 ? (
+        <InlineAlert tone="brand" role="status">
+          Your {countNoun(remaining, "remaining question")} {remaining === 1 ? "is" : "are"} waiting in a session you haven’t
+          finished. Continue it to use {remaining === 1 ? "it" : "them"}.
+        </InlineAlert>
+      ) : null}
+
+      {remaining === 0 ? (
+        <AllowanceNotice
+          message={exhausted.message}
+          upgrade={exhausted.upgrade}
+          source="practice_exhausted"
+          detail="Your results, answers and mistake bank stay available."
+        />
+      ) : remaining === 1 ? (
+        <AllowanceNotice emphasis="subtle" message={PRACTICE_ONE_REMAINING} source="practice_one_remaining" />
+      ) : null}
     </div>
   );
 }

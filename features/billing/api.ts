@@ -3,7 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { planLimitNotice, planLimitText, type LimitedCapability } from "@/features/billing/limit-notice";
-import type { QuotaReservation } from "@/features/billing/quota";
+import type { PracticeMeter, PracticeQuestionAllowance, QuotaReservation } from "@/features/billing/quota";
 
 /**
  * The one shape a plan limit takes on the wire.
@@ -19,6 +19,7 @@ import type { QuotaReservation } from "@/features/billing/quota";
 export function planLimitResponse(
   capability: LimitedCapability,
   reservation: Pick<QuotaReservation, "tier" | "limit" | "window">,
+  extra: Record<string, unknown> = {},
 ): NextResponse {
   const notice = planLimitNotice({
     capability,
@@ -29,7 +30,19 @@ export function planLimitResponse(
   });
 
   return NextResponse.json(
-    { error: planLimitText(notice), code: notice.code, limit: notice },
+    { ...extra, error: planLimitText(notice), code: notice.code, limit: notice },
     { status: 402, headers: { "Cache-Control": "private, no-store" } },
+  );
+}
+
+/**
+ * The Free practice-question allowance, refused. `allowance` is included when
+ * known so the browser can redraw the counts without a second request.
+ */
+export function practiceLimitResponse(meter: PracticeMeter, allowance?: PracticeQuestionAllowance): NextResponse {
+  return planLimitResponse(
+    "practice_question",
+    { tier: meter.tier, limit: meter.limit, window: { key: meter.dayKey, kind: "day", resetAt: meter.resetAt } },
+    allowance ? { allowance } : {},
   );
 }

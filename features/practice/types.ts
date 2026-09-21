@@ -1,3 +1,4 @@
+import type { PracticeQuestionAllowance } from "@/features/billing/usage-types";
 import type { StudentQuestion } from "@/features/questions/types";
 import type { QuestionDifficulty, QuestionOption } from "@/types/domain";
 
@@ -35,6 +36,14 @@ export interface PracticeSessionQuestionView {
   question: StudentQuestion;
   selectedOptionKey?: QuestionOption["key"] | null;
   feedback?: PracticeFeedback | null;
+  /**
+   * True when today's free allowance cannot cover this unanswered question. Its
+   * content is withheld server-side — `question` is an empty placeholder — so a
+   * locked question is never delivered, not merely hidden.
+   */
+  locked?: boolean;
+  /** True when this question already counts against today's free allowance and is waiting for an answer. */
+  held?: boolean;
 }
 
 export interface PracticeSessionView {
@@ -62,6 +71,12 @@ export interface PracticeSessionView {
   expiresAt?: string | null;
   completedAt?: string | null;
   questions: PracticeSessionQuestionView[];
+  /**
+   * The free practice allowance as the server saw it when this view was built.
+   * Absent when the student's plan does not count practice questions (Master),
+   * and null when it could not be read.
+   */
+  practiceAllowance?: PracticeQuestionAllowance | null;
 }
 
 export interface SavePracticeAnswerResult {
@@ -71,6 +86,8 @@ export interface SavePracticeAnswerResult {
   answeredCount: number;
   questionCount: number;
   feedback?: PracticeFeedback;
+  /** Present when the answer was counted against a free allowance. */
+  allowance?: PracticeQuestionAllowance;
 }
 
 export interface CompletePracticeSessionResult {

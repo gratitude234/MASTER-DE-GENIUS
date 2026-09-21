@@ -2,11 +2,12 @@ import "server-only";
 
 import { getEntitlement } from "@/features/billing/entitlements";
 import type { BillingTier, TierLimits } from "@/features/billing/plans";
+import type { PracticeQuestionAllowance } from "@/features/billing/usage-types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * Plan entitlement quotas for the two capabilities a student buys more of:
- * practice sessions and full mock attempts.
+ * Plan entitlement quotas: practice (questions on Free, sessions on Master),
+ * full mock attempts, and the shared calendar every allowance resets on.
  *
  * This is not the provider abuse limiter in lib/rate-limit.ts. That one exists
  * to stop a runaway script draining the question provider's credits for
@@ -29,7 +30,7 @@ export interface QuotaWindow {
   /** The key the database counts against. */
   key: string;
   kind: "day" | "month";
-  /** When the allowance next refills, in UTC. */
+  /** The instant the allowance next refills (midnight in Lagos). */
   resetAt: Date;
 }
 
@@ -37,29 +38,42 @@ function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
+/** The calendar every allowance is counted on. */
+export const QUOTA_TIME_ZONE = "Africa/Lagos";
+
 /**
- * Windows are computed in UTC on the server.
+ * West Africa Time is UTC+1 all year — Nigeria observes no daylight saving — so
+ * a fixed offset is exact. PostgreSQL's `product_quota_day()` uses the named
+ * zone, and the database tests assert the two agree either side of midnight.
+ */
+const LAGOS_OFFSET_MS = 60 * 60 * 1000;
+
+/**
+ * Windows are computed on the server, on the Lagos calendar.
  *
  * A device-local window would let a student roll their allowance over by
  * changing the phone clock, and would make "resets at midnight" mean different
- * things for the same student on two devices.
+ * things for the same student on two devices. UTC would make it mean 1am for
+ * every student this product serves.
  */
 export function quotaWindow(kind: "day" | "month", now: Date = new Date()): QuotaWindow {
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth();
+  const local = new Date(now.getTime() + LAGOS_OFFSET_MS);
+  const year = local.getUTCFullYear();
+  const month = local.getUTCMonth();
 
   if (kind === "month") {
     return {
       key: `${year}-${pad(month + 1)}`,
       kind,
-      resetAt: new Date(Date.UTC(year, month + 1, 1)),
+      resetAt: new Date(Date.UTC(year, month + 1, 1) - LAGOS_OFFSET_MS),
     };
   }
 
+  const day = local.getUTCDate();
   return {
-    key: `${year}-${pad(month + 1)}-${pad(now.getUTCDate())}`,
+    key: `${year}-${pad(month + 1)}-${pad(day)}`,
     kind,
-    resetAt: new Date(Date.UTC(year, month, now.getUTCDate() + 1)),
+    resetAt: new Date(Date.UTC(year, month, day + 1) - LAGOS_OFFSET_MS),
   };
 }
 
@@ -68,8 +82,106 @@ export function capabilityLimit(capability: QuotaCapability, limits: TierLimits)
   windowKind: "day" | "month";
 } {
   return capability === "practice_session"
-    ? { limit: limits.practiceSessionsPerDay, windowKind: "day" }
+    ? { limit: limits.practice.perDay, windowKind: "day" }
     : { limit: limits.mockAttempts, windowKind: limits.mockAttemptWindow };
+}
+
+// ───────────────────────────────────────────── practice questions (Free)
+
+/**
+ * What a question-metered practice call needs to know. Null when the student's
+ * plan counts practice by session instead, which means: take the unmetered
+ * path, exactly as before this release.
+ */
+export interface PracticeMeter {
+  dayKey: string;
+  limit: number;
+  resetAt: Date;
+  tier: BillingTier;
+}
+
+export function practiceMeterFor(
+  entitlement: { tier: BillingTier; limits: TierLimits },
+  now: Date = new Date(),
+): PracticeMeter | null {
+  if (entitlement.limits.practice.unit !== "question") return null;
+  const window = quotaWindow("day", now);
+  return { dayKey: window.key, limit: entitlement.limits.practice.perDay, resetAt: window.resetAt, tier: entitlement.tier };
+}
+
+export type { PracticeQuestionAllowance };
+
+interface AllowanceRow {
+  allowance: number;
+  used: number;
+  waiting: number;
+  remaining: number;
+  available: number;
+}
+
+/** Thrown when a metered call finds nothing left. Carries what the notice needs. */
+export class PracticeAllowanceExhausted extends Error {
+  constructor(readonly meter: PracticeMeter) {
+    super("FREE_PRACTICE_LIMIT");
+    this.name = "PracticeAllowanceExhausted";
+  }
+}
+
+export function isPracticeLimitError(error: unknown): boolean {
+  if (error instanceof PracticeAllowanceExhausted) return true;
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return message.includes("FREE_PRACTICE_LIMIT");
+}
+
+export function toPracticeAllowance(row: Partial<AllowanceRow> & { limit?: number }): PracticeQuestionAllowance {
+  const limit = Number(row.allowance ?? row.limit ?? 0);
+  return {
+    limit,
+    used: Number(row.used ?? 0),
+    waiting: Number(row.waiting ?? 0),
+    remaining: Number(row.remaining ?? 0),
+    available: Number(row.available ?? 0),
+  };
+}
+
+/**
+ * Reads the allowance without taking it. Used to size a session and to render
+ * the setup screen; the metered functions re-check under the ledger lock, so a
+ * stale read here can only ever make a request fail, never overspend.
+ *
+ * Null when the ledger cannot be read. Every caller treats that as "nothing may
+ * be delivered" — but says so as an outage, not as a used-up allowance, so a
+ * student is never told they have spent questions they have not.
+ */
+export async function readPracticeAllowance(userId: string, meter: PracticeMeter): Promise<PracticeQuestionAllowance | null> {
+  try {
+    const { data, error } = await createAdminClient().rpc("practice_question_allowance", {
+      p_user_id: userId,
+      p_day_key: meter.dayKey,
+      p_limit: meter.limit,
+    });
+    const row = (data as unknown as AllowanceRow[] | null)?.[0];
+    if (error || !row) {
+      console.error(`[billing] practice allowance read failed: ${error?.code ?? "no row"}`);
+      return null;
+    }
+    return toPracticeAllowance(row);
+  } catch {
+    console.error("[billing] practice allowance read failed");
+    return null;
+  }
+}
+
+/** Question ids a metered session holds for the student — always answerable. */
+export async function readHeldPracticeQuestions(userId: string, sessionId: string): Promise<string[]> {
+  const { data, error } = await createAdminClient()
+    .from("practice_question_usage")
+    .select("session_question_id")
+    .eq("user_id", userId)
+    .eq("session_id", sessionId)
+    .eq("state", "held");
+  if (error) throw new Error("Could not load your practice allowance.");
+  return (data ?? []).map((row) => row.session_question_id);
 }
 
 export interface QuotaReservation {

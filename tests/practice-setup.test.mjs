@@ -36,6 +36,7 @@ registerHooks({
     if (specifier === '@/features/results/service') {
       return stub(`export async function loadHistory(){ globalThis.__historyReads = (globalThis.__historyReads ?? 0) + 1; return globalThis.__history ?? []; }`);
     }
+    if (specifier === "@/features/billing/usage") return { url: new URL("./stubs/billing-usage.mjs", import.meta.url).href, shortCircuit: true };
     return next(specifier, context);
   },
 });
